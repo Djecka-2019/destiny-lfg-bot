@@ -2,3 +2,4 @@
 /.venv/
 .env
 lfg_sessions.json
+lfg_sessions.db

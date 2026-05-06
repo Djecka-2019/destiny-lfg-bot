@@ -4,6 +4,7 @@ import os
 import re
 
 import aiohttp
+import aiosqlite
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -65,9 +66,11 @@ DUNGEONS = [
 
 RAID_MAX = 6
 DUNGEON_MAX = 3
-DATA_FILE = "lfg_sessions.json"
+DB_FILE = "lfg_sessions.db"
 
-lfg_sessions: dict = {}
+# In-memory cache: message_id (str) → session dict.
+# Populated from DB at startup; DB is the source of truth on disk.
+lfg_sessions: dict[str, dict] = {}
 
 
 async def fetch_activity_images() -> None:
@@ -138,16 +141,75 @@ async def fetch_activity_images() -> None:
     print(f"Прев’ю активностей: {found}/{len(ACTIVITY_EN_NAMES)} знайдено")
 
 
-def load_sessions() -> None:
-    global lfg_sessions
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            lfg_sessions = json.load(f)
+async def init_db() -> None:
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                message_id  TEXT PRIMARY KEY,
+                activity    TEXT NOT NULL,
+                activity_type TEXT NOT NULL,
+                time_str    TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                leader_id   TEXT NOT NULL,
+                leader_name TEXT NOT NULL,
+                capacity    INTEGER NOT NULL,
+                thread_id   TEXT,
+                members     TEXT NOT NULL DEFAULT '[]'
+            )
+        """)
+        await db.commit()
 
 
-def save_sessions() -> None:
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(lfg_sessions, f, ensure_ascii=False, indent=2)
+async def load_sessions_from_db() -> None:
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM sessions") as cursor:
+            async for row in cursor:
+                lfg_sessions[row["message_id"]] = {
+                    "activity":      row["activity"],
+                    "activity_type": row["activity_type"],
+                    "time":          row["time_str"],
+                    "description":   row["description"],
+                    "leader_id":     row["leader_id"],
+                    "leader_name":   row["leader_name"],
+                    "capacity":      row["capacity"],
+                    "thread_id":     row["thread_id"],
+                    "members":       json.loads(row["members"]),
+                }
+
+
+async def upsert_session(message_id: str, session: dict) -> None:
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute(
+            """
+            INSERT INTO sessions
+                (message_id, activity, activity_type, time_str, description,
+                 leader_id, leader_name, capacity, thread_id, members)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(message_id) DO UPDATE SET
+                thread_id = excluded.thread_id,
+                members   = excluded.members
+            """,
+            (
+                message_id,
+                session["activity"],
+                session["activity_type"],
+                session["time"],
+                session.get("description", ""),
+                session["leader_id"],
+                session["leader_name"],
+                session["capacity"],
+                session.get("thread_id"),
+                json.dumps(session["members"]),
+            ),
+        )
+        await db.commit()
+
+
+async def delete_session(message_id: str) -> None:
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("DELETE FROM sessions WHERE message_id = ?", (message_id,))
+        await db.commit()
 
 def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     activity = session["activity"]
@@ -240,7 +302,7 @@ class LFGView(discord.ui.View):
             members.append(user_id)
             joined = True
 
-        save_sessions()
+        await upsert_session(msg_id, session)
 
         await interaction.message.edit(embed=build_lfg_embed(session), view=self)
 
@@ -296,7 +358,7 @@ class LFGView(discord.ui.View):
                     pass
 
         del lfg_sessions[msg_id]
-        save_sessions()
+        await delete_session(msg_id)
 
 class ActivitySelect(discord.ui.Select):
     def __init__(self, activities: list[str], activity_type: str) -> None:
@@ -402,8 +464,9 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         except discord.HTTPException as e:
             print(f"Не вдалося створити гілку: {e}")
 
-        lfg_sessions[str(message.id)] = session
-        save_sessions()
+        msg_id = str(message.id)
+        lfg_sessions[msg_id] = session
+        await upsert_session(msg_id, session)
 
 class DestinyBot(commands.Bot):
     def __init__(self) -> None:
@@ -412,7 +475,8 @@ class DestinyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self) -> None:
-        load_sessions()
+        await init_db()
+        await load_sessions_from_db()
         self.add_view(LFGView())
         await fetch_activity_images()
         synced = await self.tree.sync()
