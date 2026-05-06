@@ -71,7 +71,7 @@ DUNGEONS = [
 
 RAID_MAX = 6
 DUNGEON_MAX = 3
-DB_FILE = "lfg_sessions.db"
+DB_FILE = os.path.join(os.getenv("DATA_DIR", "."), "lfg_sessions.db")
 
 # In-memory cache: message_id (str) → session dict.
 # Populated from DB at startup; DB is the source of truth on disk.
