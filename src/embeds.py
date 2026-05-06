@@ -1,0 +1,112 @@
+from datetime import datetime
+
+import discord
+
+from bungie import activity_images
+from constants import DUNGEONS, RAIDS, SHERPA_THRESHOLD
+
+
+def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
+    activity = session["activity"]
+    activity_type = session["activity_type"]
+    time_str = session["time"]
+    description = session.get("description", "")
+    members: list = session["members"]
+    reserves: list = session.get("reserves", [])
+    capacity: int = session["capacity"]
+    leader_id = session["leader_id"]
+    leader_name = session["leader_name"]
+
+    is_raid = activity_type == "raid"
+    if closed:
+        color = discord.Color.dark_gray()
+    elif is_raid:
+        color = discord.Color.from_rgb(255, 185, 0)
+    else:
+        color = discord.Color.from_rgb(130, 50, 210)
+
+    activity_label = "Рейд" if is_raid else "Данж"
+    emoji = "⚔️" if is_raid else "🗡️"
+
+    scheduled_at = session.get("scheduled_at")
+    if scheduled_at:
+        try:
+            dt = datetime.fromisoformat(scheduled_at)
+            ts = int(dt.timestamp())
+            display_time = f"<t:{ts}:t> (<t:{ts}:R>)"
+        except Exception:
+            display_time = f"**{time_str}**"
+    else:
+        display_time = f"**{time_str}**"
+
+    embed = discord.Embed(
+        title=f"{emoji} {activity_label}: {activity}",
+        color=color,
+    )
+    embed.add_field(name="⏰ Час початку", value=display_time, inline=True)
+    embed.add_field(name="👥 Місця", value=f"**{len(members)}/{capacity}**", inline=True)
+    embed.add_field(name="​", value="​", inline=True)
+
+    if description:
+        embed.add_field(name="📝 Опис / вимоги", value=description, inline=False)
+
+    slots_lines = []
+    for i in range(capacity):
+        if i < len(members):
+            mid = members[i]
+            crown = " 👑" if mid == leader_id else ""
+            slots_lines.append(f"`{i + 1}.` <@{mid}>{crown}")
+        else:
+            slots_lines.append(f"`{i + 1}.` *Вільне місце*")
+    embed.add_field(name="👤 Учасники", value="\n".join(slots_lines), inline=False)
+
+    if reserves:
+        reserve_lines = [f"`{i + 1}.` <@{mid}>" for i, mid in enumerate(reserves)]
+        embed.add_field(name="⏳ Запасні", value="\n".join(reserve_lines), inline=False)
+
+    if closed:
+        status = "🔒 Збір закрито"
+    elif len(members) >= capacity:
+        status = "🔴 Набір завершено"
+    else:
+        status = "✅ Набір відкрито"
+
+    embed.set_footer(text=f"Організатор: {leader_name}  •  {status}")
+
+    image_url = activity_images.get(activity)
+    if image_url:
+        embed.set_image(url=image_url)
+
+    return embed
+
+
+def build_profile_embed(bungie_name: str, completions: dict[str, int]) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"🎮 {bungie_name}",
+        color=discord.Color.from_rgb(255, 185, 0),
+    )
+
+    def _lines(activity_list: list[str]) -> tuple[list[str], int]:
+        lines, total = [], 0
+        for name in activity_list:
+            n = completions.get(name, 0)
+            total += n
+            sherpa = "  🎓" if n >= SHERPA_THRESHOLD else ""
+            lines.append(f"`{n}` {name}{sherpa}")
+        return lines, total
+
+    raid_lines, total_raids = _lines(RAIDS)
+    dungeon_lines, total_dungeons = _lines(DUNGEONS)
+
+    embed.add_field(
+        name=f"⚔️ Рейди — всього: **{total_raids}**",
+        value="\n".join(raid_lines),
+        inline=False,
+    )
+    embed.add_field(
+        name=f"🗡️ Данжі — всього: **{total_dungeons}**",
+        value="\n".join(dungeon_lines),
+        inline=False,
+    )
+    embed.set_footer(text=f"🎓 = Шерпа ({SHERPA_THRESHOLD}+ закриттів)")
+    return embed

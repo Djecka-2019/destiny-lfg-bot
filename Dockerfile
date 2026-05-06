@@ -11,4 +11,4 @@ RUN mkdir -p /app/data
 
 ENV DATA_DIR=/app/data
 
-CMD ["python", "bot.py"]
+CMD ["python", "src/bot.py"]

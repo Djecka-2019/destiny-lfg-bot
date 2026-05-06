@@ -1,6 +1,6 @@
 """
-Diagnostic script: shows which Bungie manifest names match our search terms
-and what pgcrImage URLs they have.
+Diagnostic script: shows which Bungie manifest names match our activity list
+and what pgcrImage URLs they have. Run directly: python find_activities.py
 """
 
 import asyncio
@@ -10,35 +10,12 @@ import sys
 import aiohttp
 from dotenv import load_dotenv
 
-sys.stdout.reconfigure(encoding="utf-8")
+from constants import ACTIVITY_EN_NAMES, BUNGIE_BASE
 
+sys.stdout.reconfigure(encoding="utf-8")
 load_dotenv()
 
-BUNGIE_BASE = "https://www.bungie.net"
-
-SEARCH_TERMS = [
-    # Raids
-    "Vault of Glass",
-    "Last Wish",
-    "Garden of Salvation",
-    "Deep Stone Crypt",
-    "Vow of the Disciple",
-    "King's Fall",
-    "Root of Nightmares",
-    "Crota's End",
-    "Salvation's Edge",
-    "The Desert Perpetual",
-    # Dungeons
-    "Pit of Heresy",
-    "Prophecy",
-    "Grasp of Avarice",
-    "Duality",
-    "Spire of the Watcher",
-    "Ghosts of the Deep",
-    "Warlord's Ruin",
-    "Vesper's Host",
-    "Equilibrium",
-]
+SEARCH_TERMS = list(ACTIVITY_EN_NAMES.values())
 
 
 async def main() -> None:
@@ -108,6 +85,7 @@ async def main() -> None:
     print("\n" + "=" * 72)
 
     _INVALID = ("missing_icon", "placeholder.jpg")
+
     def _norm(s: str) -> str:
         return s.replace("’", "'").replace("‘", "'")
 
@@ -118,31 +96,9 @@ async def main() -> None:
         if n and p and not any(m in p for m in _INVALID) and n not in en_to_image:
             en_to_image[n] = f"{BUNGIE_BASE}{p}"
 
-    uk_names = {
-        "Склеп Скла": "Vault of Glass",
-        "Останнє бажання": "Last Wish",
-        "Сад Порятунку": "Garden of Salvation",
-        "Склеп Глибокого Каменю": "Deep Stone Crypt",
-        "Обітниця послідовника": "Vow of the Disciple",
-        "Падіння Короля": "King’s Fall",
-        "Коріння Жахів": "Root of Nightmares",
-        "Кінець Кроти": "Crota’s End",
-        "Межа Спасіння": "Salvation’s Edge",
-        "Піски безкінечності": "The Desert Perpetual",
-        "Яма Єресі": "Pit of Heresy",
-        "Пророцтво": "Prophecy",
-        "Хватка Алчності": "Grasp of Avarice",
-        "Двоїстість": "Duality",
-        "Шпиль Спостерігача": "Spire of the Watcher",
-        "Примари Глибин": "Ghosts of the Deep",
-        "Руїни Варлорда": "Warlord’s Ruin",
-        "Притулок Веспера": "Vesper’s Host",
-        "Еквілібріум": "Equilibrium",
-    }
-
     print("\n📊  Результат нової логіки matching у bot.py:\n")
     found = 0
-    for uk, en in uk_names.items():
+    for uk, en in ACTIVITY_EN_NAMES.items():
         url = (
             en_to_image.get(en)
             or en_to_image.get(f"{en}: Standard")
@@ -153,7 +109,7 @@ async def main() -> None:
         print(f"  {mark}  {uk:<30}  {img_short}")
         if url:
             found += 1
-    print(f"\n  Разом: {found}/{len(uk_names)}")
+    print(f"\n  Разом: {found}/{len(ACTIVITY_EN_NAMES)}")
 
 
 if __name__ == "__main__":
