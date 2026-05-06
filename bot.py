@@ -377,7 +377,7 @@ async def get_activity_completions(membership_type: int, membership_id: str) -> 
                 continue
             for act in stats.get("Response", {}).get("activities", []):
                 h: int = act.get("activityHash", 0)
-                n: int = (
+                n: int = int(
                     act.get("values", {})
                     .get("activityCompletions", {})
                     .get("basic", {})
@@ -405,7 +405,7 @@ def build_profile_embed(bungie_name: str, completions: dict[str, int]) -> discor
             n = completions.get(name, 0)
             total += n
             sherpa = "  🎓" if n >= SHERPA_THRESHOLD else ""
-            lines.append(f"`{n:>3}` {name}{sherpa}")
+            lines.append(f"`{n}` {name}{sherpa}")
         return lines, total
 
     raid_lines, total_raids = _lines(RAIDS)
