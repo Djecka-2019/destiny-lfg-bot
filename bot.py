@@ -175,6 +175,7 @@ async def init_db() -> None:
                 capacity      INTEGER NOT NULL,
                 thread_id     TEXT,
                 members       TEXT NOT NULL DEFAULT '[]',
+                reserves      TEXT NOT NULL DEFAULT '[]',
                 guild_id      TEXT,
                 channel_id    TEXT,
                 scheduled_at  TEXT,
@@ -186,6 +187,7 @@ async def init_db() -> None:
             ("channel_id",    "TEXT"),
             ("scheduled_at",  "TEXT"),
             ("reminder_sent", "INTEGER NOT NULL DEFAULT 0"),
+            ("reserves",      "TEXT NOT NULL DEFAULT '[]'"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
@@ -217,6 +219,7 @@ async def load_sessions_from_db() -> None:
                     "capacity":      row["capacity"],
                     "thread_id":     row["thread_id"],
                     "members":       json.loads(row["members"]),
+                    "reserves":      json.loads(row["reserves"] if row["reserves"] else "[]"),
                     "guild_id":      row["guild_id"],
                     "channel_id":    row["channel_id"],
                     "scheduled_at":  row["scheduled_at"],
@@ -230,12 +233,13 @@ async def upsert_session(message_id: str, session: dict) -> None:
             """
             INSERT INTO sessions
                 (message_id, activity, activity_type, time_str, description,
-                 leader_id, leader_name, capacity, thread_id, members,
+                 leader_id, leader_name, capacity, thread_id, members, reserves,
                  guild_id, channel_id, scheduled_at, reminder_sent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(message_id) DO UPDATE SET
                 thread_id     = excluded.thread_id,
                 members       = excluded.members,
+                reserves      = excluded.reserves,
                 reminder_sent = excluded.reminder_sent
             """,
             (
@@ -249,6 +253,7 @@ async def upsert_session(message_id: str, session: dict) -> None:
                 session["capacity"],
                 session.get("thread_id"),
                 json.dumps(session["members"]),
+                json.dumps(session.get("reserves", [])),
                 session.get("guild_id"),
                 session.get("channel_id"),
                 session.get("scheduled_at"),
@@ -426,6 +431,7 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     time_str = session["time"]
     description = session.get("description", "")
     members: list = session["members"]
+    reserves: list = session.get("reserves", [])
     capacity: int = session["capacity"]
     leader_id = session["leader_id"]
     leader_name = session["leader_name"]
@@ -461,6 +467,10 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
         else:
             slots_lines.append(f"`{i + 1}.` *Вільне місце*")
     embed.add_field(name="👤 Учасники", value="\n".join(slots_lines), inline=False)
+
+    if reserves:
+        reserve_lines = [f"`{i + 1}.` <@{mid}>" for i, mid in enumerate(reserves)]
+        embed.add_field(name="⏳ Запасні", value="\n".join(reserve_lines), inline=False)
 
     if closed:
         status = "🔒 Збір закрито"
@@ -500,16 +510,26 @@ class LFGView(discord.ui.View):
 
         user_id = str(interaction.user.id)
         members: list = session["members"]
+        reserves: list = session.setdefault("reserves", [])
+
+        promoted_id: str | None = None
 
         if user_id in members:
             members.remove(user_id)
             joined = False
+            if reserves:
+                promoted_id = reserves.pop(0)
+                members.append(promoted_id)
+        elif user_id in reserves:
+            reserves.remove(user_id)
+            joined = False
         else:
             if len(members) >= session["capacity"]:
-                await interaction.followup.send("❌ Немає вільних місць!", ephemeral=True)
-                return
-            members.append(user_id)
-            joined = True
+                reserves.append(user_id)
+                joined = None
+            else:
+                members.append(user_id)
+                joined = True
 
         await upsert_session(msg_id, session)
 
@@ -519,14 +539,29 @@ class LFGView(discord.ui.View):
         if thread_id:
             thread = interaction.guild.get_thread(int(thread_id))
             if thread:
-                if joined:
+                if joined is True:
                     await thread.send(
                         f"🟢 {interaction.user.mention} **приєднався(-лась)** до активності!"
+                    )
+                elif joined is None:
+                    await thread.send(
+                        f"⏳ {interaction.user.mention} **доданий(-на) до запасних** (місць немає)."
                     )
                 else:
                     await thread.send(
                         f"🔴 {interaction.user.mention} **покинув(-ла)** активність."
                     )
+                if promoted_id:
+                    promoted = interaction.guild.get_member(int(promoted_id))
+                    name = promoted.mention if promoted else f"<@{promoted_id}>"
+                    await thread.send(
+                        f"🟢 {name} **переміщений(-на) із запасних** до основного складу!"
+                    )
+
+        if joined is None:
+            await interaction.followup.send(
+                "⏳ Місця заповнені — тебе додано до запасних.", ephemeral=True
+            )
 
     @discord.ui.button(
         label="Статистика команди",
@@ -705,6 +740,7 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             "leader_id":     leader_id,
             "leader_name":   interaction.user.display_name,
             "members":       [leader_id],
+            "reserves":      [],
             "capacity":      capacity,
             "thread_id":     None,
             "guild_id":      str(interaction.guild_id),
