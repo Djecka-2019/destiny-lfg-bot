@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+GUILD_ID = os.getenv("GUILD_ID")
 BUNGIE_BASE = "https://www.bungie.net"
 
 ACTIVITY_EN_NAMES: dict[str, str] = {
@@ -39,6 +40,9 @@ ACTIVITY_EN_NAMES: dict[str, str] = {
 }
 
 activity_images: dict[str, str] = {}
+activity_hashes: dict[str, set[int]] = {}
+SHERPA_THRESHOLD = 2
+NEWBIE_THRESHOLD = 2
 
 RAIDS = [
     "Склеп Скла",  # Vault of Glass
@@ -141,6 +145,21 @@ async def fetch_activity_images() -> None:
 
     print(f"Прев’ю активностей: {found}/{len(ACTIVITY_EN_NAMES)} знайдено")
 
+    # Build activity_hashes: every hash that belongs to a known activity (all variants)
+    en_to_uk = {en: uk for uk, en in ACTIVITY_EN_NAMES.items()}
+    for hash_str, entry in activity_defs.items():
+        en_name: str = entry.get("displayProperties", {}).get("name", "").strip()
+        base_name = en_name.split(": ")[0] if ": " in en_name else en_name
+        uk_name = en_to_uk.get(base_name)
+        if uk_name:
+            activity_hashes.setdefault(uk_name, set())
+            try:
+                activity_hashes[uk_name].add(int(hash_str))
+            except ValueError:
+                pass
+    total_hashes = sum(len(v) for v in activity_hashes.values())
+    print(f"Хеші активностей: {total_hashes} варіантів для {len(activity_hashes)} активностей")
+
 
 async def init_db() -> None:
     async with aiosqlite.connect(DB_FILE) as db:
@@ -172,6 +191,14 @@ async def init_db() -> None:
                 await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
             except aiosqlite.OperationalError:
                 pass  # Column already exists
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS profiles (
+                discord_id      TEXT PRIMARY KEY,
+                membership_type INTEGER NOT NULL,
+                membership_id   TEXT NOT NULL,
+                bungie_name     TEXT NOT NULL
+            )
+        """)
         await db.commit()
 
 
@@ -235,6 +262,163 @@ async def delete_session(message_id: str) -> None:
     async with aiosqlite.connect(DB_FILE) as db:
         await db.execute("DELETE FROM sessions WHERE message_id = ?", (message_id,))
         await db.commit()
+
+
+# ── Profile DB helpers ────────────────────────────────────────────────────────
+
+async def save_profile(
+    discord_id: str, membership_type: int, membership_id: str, bungie_name: str
+) -> None:
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute(
+            """
+            INSERT INTO profiles (discord_id, membership_type, membership_id, bungie_name)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(discord_id) DO UPDATE SET
+                membership_type = excluded.membership_type,
+                membership_id   = excluded.membership_id,
+                bungie_name     = excluded.bungie_name
+            """,
+            (discord_id, membership_type, membership_id, bungie_name),
+        )
+        await db.commit()
+
+
+async def get_discord_profile(discord_id: str) -> tuple[int, str, str] | None:
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT membership_type, membership_id, bungie_name FROM profiles WHERE discord_id = ?",
+            (discord_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    return (row["membership_type"], row["membership_id"], row["bungie_name"]) if row else None
+
+
+# ── Bungie API helpers ────────────────────────────────────────────────────────
+
+async def search_bungie_player(display_name: str, display_name_code: int) -> dict | None:
+    api_key = os.getenv("BUNGIE_API_KEY")
+    if not api_key:
+        return None
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as http:
+        try:
+            async with http.post(
+                f"{BUNGIE_BASE}/Platform/Destiny2/SearchDestinyPlayerByBungieName/-1/",
+                headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+                json={"displayName": display_name, "displayNameCode": display_name_code},
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+        except Exception:
+            return None
+    players = data.get("Response", [])
+    if not players:
+        return None
+    p = players[0]
+    code = p.get("bungieGlobalDisplayNameCode", display_name_code)
+    name = p.get("bungieGlobalDisplayName", display_name)
+    return {
+        "membership_type": p["membershipType"],
+        "membership_id":   p["membershipId"],
+        "bungie_name":     f"{name}#{code:04d}",
+    }
+
+
+async def get_activity_completions(membership_type: int, membership_id: str) -> dict[str, int]:
+    """Returns Ukrainian activity name → total completions across all characters and variants."""
+    api_key = os.getenv("BUNGIE_API_KEY")
+    if not api_key or not activity_hashes:
+        return {}
+
+    headers = {"X-API-Key": api_key}
+    timeout = aiohttp.ClientTimeout(total=15)
+
+    async with aiohttp.ClientSession(timeout=timeout) as http:
+        try:
+            async with http.get(
+                f"{BUNGIE_BASE}/Platform/Destiny2/{membership_type}/Profile/{membership_id}/"
+                "?components=100",
+                headers=headers,
+            ) as resp:
+                if resp.status != 200:
+                    return {}
+                profile_data = await resp.json()
+        except Exception:
+            return {}
+
+        char_ids: list[str] = list(
+            profile_data.get("Response", {})
+            .get("profile", {})
+            .get("data", {})
+            .get("characterIds", [])
+        )
+        if not char_ids:
+            return {}
+
+        hash_completions: dict[int, int] = {}
+        for char_id in char_ids:
+            try:
+                async with http.get(
+                    f"{BUNGIE_BASE}/Platform/Destiny2/{membership_type}"
+                    f"/Account/{membership_id}/Character/{char_id}/Stats/AggregateActivityStats/",
+                    headers=headers,
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    stats = await resp.json()
+            except Exception:
+                continue
+            for act in stats.get("Response", {}).get("activities", []):
+                h: int = act.get("activityHash", 0)
+                n: int = (
+                    act.get("values", {})
+                    .get("activityCompletions", {})
+                    .get("basic", {})
+                    .get("value", 0)
+                )
+                if h and n:
+                    hash_completions[h] = hash_completions.get(h, 0) + n
+
+    return {
+        uk: total
+        for uk, hashes in activity_hashes.items()
+        if (total := sum(hash_completions.get(h, 0) for h in hashes)) > 0
+    }
+
+
+def build_profile_embed(bungie_name: str, completions: dict[str, int]) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"🎮 {bungie_name}",
+        color=discord.Color.from_rgb(255, 185, 0),
+    )
+
+    def _lines(activity_list: list[str]) -> tuple[list[str], int]:
+        lines, total = [], 0
+        for name in activity_list:
+            n = completions.get(name, 0)
+            total += n
+            sherpa = "  🎓" if n >= SHERPA_THRESHOLD else ""
+            lines.append(f"`{n:>3}` {name}{sherpa}")
+        return lines, total
+
+    raid_lines, total_raids = _lines(RAIDS)
+    dungeon_lines, total_dungeons = _lines(DUNGEONS)
+
+    embed.add_field(
+        name=f"⚔️ Рейди — всього: **{total_raids}**",
+        value="\n".join(raid_lines),
+        inline=False,
+    )
+    embed.add_field(
+        name=f"🗡️ Данжі — всього: **{total_dungeons}**",
+        value="\n".join(dungeon_lines),
+        inline=False,
+    )
+    embed.set_footer(text=f"🎓 = Шерпа ({SHERPA_THRESHOLD}+ закриттів)")
+    return embed
+
 
 def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     activity = session["activity"]
@@ -343,6 +527,57 @@ class LFGView(discord.ui.View):
                     await thread.send(
                         f"🔴 {interaction.user.mention} **покинув(-ла)** активність."
                     )
+
+    @discord.ui.button(
+        label="Статистика команди",
+        style=discord.ButtonStyle.blurple,
+        custom_id="lfg:stats",
+        emoji="📊",
+    )
+    async def team_stats(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        msg_id = str(interaction.message.id)
+        session = lfg_sessions.get(msg_id)
+        if not session:
+            await interaction.followup.send("Активність не знайдена.", ephemeral=True)
+            return
+
+        activity = session["activity"]
+        lines: list[str] = []
+        newbies = 0
+
+        for member_id in session["members"]:
+            profile = await get_discord_profile(member_id)
+            if not profile:
+                lines.append(f"<@{member_id}>: акаунт не прив'язано")
+                continue
+            membership_type, membership_id, bungie_name = profile
+            completions = await get_activity_completions(membership_type, membership_id)
+            count = completions.get(activity, 0)
+            total = sum(completions.values())
+            if count >= SHERPA_THRESHOLD:
+                tag = "  🎓 Шерпа"
+            elif count < NEWBIE_THRESHOLD:
+                tag = "  🆕 Новачок"
+                newbies += 1
+            else:
+                tag = ""
+            lines.append(
+                f"<@{member_id}> `{bungie_name}` — **{count}** закриттів{tag}"
+                f"  *(всього: {total})*"
+            )
+
+        is_raid = session["activity_type"] == "raid"
+        color = discord.Color.from_rgb(255, 185, 0) if is_raid else discord.Color.from_rgb(130, 50, 210)
+        embed = discord.Embed(
+            title=f"📊 Статистика команди — {activity}",
+            description="\n".join(lines) or "Немає даних",
+            color=color,
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @discord.ui.button(
         label="Закрити збір",
@@ -513,8 +748,16 @@ class DestinyBot(commands.Bot):
         await load_sessions_from_db()
         self.add_view(LFGView())
         await fetch_activity_images()
-        synced = await self.tree.sync()
-        print(f"Синхронізовано {len(synced)} команд(и). Завантажено сесій: {len(lfg_sessions)}")
+        if GUILD_ID:
+            guild = discord.Object(id=int(GUILD_ID))
+            self.tree.copy_global_to(guild=guild)
+            guild_synced = await self.tree.sync(guild=guild)
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
+            print(f"Синхронізовано {len(guild_synced)} команд(и) для сервера {GUILD_ID}. Завантажено сесій: {len(lfg_sessions)}")
+        else:
+            synced = await self.tree.sync()
+            print(f"Синхронізовано {len(synced)} команд(и) глобально. Завантажено сесій: {len(lfg_sessions)}")
 
     async def on_ready(self) -> None:
         print(f"✅ Бот запущено: {self.user}  (ID: {self.user.id})")
@@ -598,6 +841,103 @@ async def search_dungeons(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(
         "🗡️ **Оберіть данж для збору:**", view=view, ephemeral=True
     )
+
+
+def _parse_bungie_name(raw: str) -> tuple[str, int] | None:
+    if "#" not in raw:
+        return None
+    name, code_str = raw.rsplit("#", 1)
+    try:
+        return name.strip(), int(code_str.strip())
+    except ValueError:
+        return None
+
+
+@bot.tree.command(name="додати-аккаунт", description="Прив'яжіть ваш акаунт Bungie до Discord")
+@app_commands.describe(bungie_name="Ваш Bungie name у форматі Ім'я#1234")
+async def link_account(interaction: discord.Interaction, bungie_name: str) -> None:
+    await interaction.response.defer(ephemeral=True)
+
+    parsed = _parse_bungie_name(bungie_name)
+    if not parsed:
+        await interaction.followup.send("❌ Формат: `Ім'я#1234`", ephemeral=True)
+        return
+
+    player = await search_bungie_player(*parsed)
+    if not player:
+        await interaction.followup.send(
+            f"❌ Гравця `{bungie_name}` не знайдено на Bungie.\n"
+            "Перевірте ім'я та код (приклад: `Guardian#1234`)",
+            ephemeral=True,
+        )
+        return
+
+    await save_profile(
+        str(interaction.user.id),
+        player["membership_type"],
+        player["membership_id"],
+        player["bungie_name"],
+    )
+    await interaction.followup.send(
+        f"✅ Акаунт **{player['bungie_name']}** прив'язано до вашого Discord!",
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(name="профіль", description="Переглянути статистику Destiny 2")
+@app_commands.describe(
+    гравець="Discord користувач (необов'язково)",
+    bungie_name="Bungie name у форматі Ім'я#1234 (якщо не прив'язано)",
+)
+async def show_profile(
+    interaction: discord.Interaction,
+    гравець: discord.Member | None = None,
+    bungie_name: str | None = None,
+) -> None:
+    await interaction.response.defer()
+
+    membership_type: int
+    membership_id: str
+    bname: str
+
+    if гравець:
+        result = await get_discord_profile(str(гравець.id))
+        if not result:
+            await interaction.followup.send(
+                f"❌ {гравець.mention} ще не прив'язав Bungie акаунт. "
+                "Попросіть їх використати `/додати-аккаунт`.",
+                ephemeral=True,
+            )
+            return
+        membership_type, membership_id, bname = result
+
+    elif bungie_name:
+        parsed = _parse_bungie_name(bungie_name)
+        if not parsed:
+            await interaction.followup.send("❌ Формат: `Ім'я#1234`", ephemeral=True)
+            return
+        player = await search_bungie_player(*parsed)
+        if not player:
+            await interaction.followup.send(
+                f"❌ Гравця `{bungie_name}` не знайдено", ephemeral=True
+            )
+            return
+        membership_type = player["membership_type"]
+        membership_id   = player["membership_id"]
+        bname           = player["bungie_name"]
+
+    else:
+        result = await get_discord_profile(str(interaction.user.id))
+        if not result:
+            await interaction.followup.send(
+                "❌ Спочатку прив'яжіть акаунт через `/додати-аккаунт` або вкажіть `bungie_name`.",
+                ephemeral=True,
+            )
+            return
+        membership_type, membership_id, bname = result
+
+    completions = await get_activity_completions(membership_type, membership_id)
+    await interaction.followup.send(embed=build_profile_embed(bname, completions))
 
 
 if __name__ == "__main__":
