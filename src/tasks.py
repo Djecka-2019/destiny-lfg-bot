@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import discord
 from discord.ext import tasks
 
+from constants import TZ_KYIV
 from database import lfg_sessions, upsert_session
 
 _bot = None
@@ -15,7 +16,7 @@ def setup_tasks(bot) -> None:
 
 @tasks.loop(minutes=1)
 async def reminder_task() -> None:
-    now = datetime.now().astimezone()
+    now = datetime.now(TZ_KYIV)
     window = timedelta(minutes=15)
 
     for msg_id, session in list(lfg_sessions.items()):
@@ -28,7 +29,7 @@ async def reminder_task() -> None:
         try:
             scheduled = datetime.fromisoformat(scheduled_str)
             if scheduled.tzinfo is None:
-                scheduled = scheduled.astimezone()
+                scheduled = scheduled.replace(tzinfo=TZ_KYIV)
         except ValueError:
             continue
 

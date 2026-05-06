@@ -1,3 +1,7 @@
+import zoneinfo
+
+TZ_KYIV = zoneinfo.ZoneInfo("Europe/Kyiv")
+
 BUNGIE_BASE = "https://www.bungie.net"
 
 ACTIVITY_EN_NAMES: dict[str, str] = {

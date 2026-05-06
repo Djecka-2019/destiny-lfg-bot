@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import discord
 
 from bungie import get_activity_completions
-from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD
+from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV
 from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, upsert_session
 from embeds import build_lfg_embed, build_profile_embed
 
@@ -302,7 +302,7 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         leader_id = str(interaction.user.id)
         description = self.description_input.value.strip()
 
-        now = datetime.now().astimezone()
+        now = datetime.now(TZ_KYIV)
         scheduled = now.replace(hour=h, minute=m, second=0, microsecond=0)
         if scheduled <= now:
             scheduled += timedelta(days=1)
