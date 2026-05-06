@@ -447,11 +447,22 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     activity_label = "Рейд" if is_raid else "Данж"
     emoji = "⚔️" if is_raid else "🗡️"
 
+    scheduled_at = session.get("scheduled_at")
+    if scheduled_at:
+        try:
+            dt = datetime.fromisoformat(scheduled_at)
+            ts = int(dt.timestamp())
+            display_time = f"<t:{ts}:t> (<t:{ts}:R>)"
+        except Exception:
+            display_time = f"**{time_str}**"
+    else:
+        display_time = f"**{time_str}**"
+
     embed = discord.Embed(
         title=f"{emoji} {activity_label}: {activity}",
         color=color,
     )
-    embed.add_field(name="⏰ Час початку", value=f"**{time_str}**", inline=True)
+    embed.add_field(name="⏰ Час початку", value=display_time, inline=True)
     embed.add_field(name="👥 Місця", value=f"**{len(members)}/{capacity}**", inline=True)
     embed.add_field(name="​", value="​", inline=True)
 
@@ -727,10 +738,13 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         leader_id = str(interaction.user.id)
         description = self.description_input.value.strip()
 
-        now = datetime.now()
+        now = datetime.now().astimezone()
         scheduled = now.replace(hour=h, minute=m, second=0, microsecond=0)
         if scheduled <= now:
             scheduled += timedelta(days=1)
+
+        ts = int(scheduled.timestamp())
+        display_time = f"<t:{ts}:t>"
 
         session: dict = {
             "activity":      self._activity_name,
@@ -761,7 +775,7 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             )
             await thread.send(
                 f"🎮 **Збір відкрито!** {interaction.user.mention} організує "
-                f"**{self._activity_name}** о **{time_str}**.\n"
+                f"**{self._activity_name}** о {display_time}.\n"
                 f"Натисніть **➕ Приєднатись / Вийти** під повідомленням, щоб долучитися. "
                 f"Тут можна обговорювати активність."
             )
@@ -806,7 +820,7 @@ bot = DestinyBot()
 
 @tasks.loop(minutes=1)
 async def reminder_task() -> None:
-    now = datetime.now()
+    now = datetime.now().astimezone()
     window = timedelta(minutes=15)
 
     for msg_id, session in list(lfg_sessions.items()):
@@ -818,6 +832,8 @@ async def reminder_task() -> None:
 
         try:
             scheduled = datetime.fromisoformat(scheduled_str)
+            if scheduled.tzinfo is None:
+                scheduled = scheduled.astimezone()
         except ValueError:
             continue
 
@@ -832,13 +848,16 @@ async def reminder_task() -> None:
             if guild_id and channel_id else None
         )
 
+        ts = int(scheduled.timestamp())
+        display_time = f"<t:{ts}:t>"
+
         is_raid = session["activity_type"] == "raid"
         color = discord.Color.from_rgb(255, 185, 0) if is_raid else discord.Color.from_rgb(130, 50, 210)
         embed = discord.Embed(
             title="🔔 Нагадування про активність!",
             description=(
                 f"За **15 хвилин** починається "
-                f"**{session['activity']}** о **{session['time']}**!"
+                f"**{session['activity']}** о {display_time}!"
             ),
             color=color,
         )
