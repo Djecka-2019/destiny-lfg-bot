@@ -2,12 +2,13 @@ import asyncio
 import json
 import os
 import re
+from datetime import datetime, timedelta
 
 import aiohttp
 import aiosqlite
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -145,18 +146,32 @@ async def init_db() -> None:
     async with aiosqlite.connect(DB_FILE) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
-                message_id  TEXT PRIMARY KEY,
-                activity    TEXT NOT NULL,
+                message_id    TEXT PRIMARY KEY,
+                activity      TEXT NOT NULL,
                 activity_type TEXT NOT NULL,
-                time_str    TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                leader_id   TEXT NOT NULL,
-                leader_name TEXT NOT NULL,
-                capacity    INTEGER NOT NULL,
-                thread_id   TEXT,
-                members     TEXT NOT NULL DEFAULT '[]'
+                time_str      TEXT NOT NULL,
+                description   TEXT NOT NULL DEFAULT '',
+                leader_id     TEXT NOT NULL,
+                leader_name   TEXT NOT NULL,
+                capacity      INTEGER NOT NULL,
+                thread_id     TEXT,
+                members       TEXT NOT NULL DEFAULT '[]',
+                guild_id      TEXT,
+                channel_id    TEXT,
+                scheduled_at  TEXT,
+                reminder_sent INTEGER NOT NULL DEFAULT 0
             )
         """)
+        for col, typedef in [
+            ("guild_id",      "TEXT"),
+            ("channel_id",    "TEXT"),
+            ("scheduled_at",  "TEXT"),
+            ("reminder_sent", "INTEGER NOT NULL DEFAULT 0"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
+            except aiosqlite.OperationalError:
+                pass  # Column already exists
         await db.commit()
 
 
@@ -175,6 +190,10 @@ async def load_sessions_from_db() -> None:
                     "capacity":      row["capacity"],
                     "thread_id":     row["thread_id"],
                     "members":       json.loads(row["members"]),
+                    "guild_id":      row["guild_id"],
+                    "channel_id":    row["channel_id"],
+                    "scheduled_at":  row["scheduled_at"],
+                    "reminder_sent": bool(row["reminder_sent"]),
                 }
 
 
@@ -184,11 +203,13 @@ async def upsert_session(message_id: str, session: dict) -> None:
             """
             INSERT INTO sessions
                 (message_id, activity, activity_type, time_str, description,
-                 leader_id, leader_name, capacity, thread_id, members)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 leader_id, leader_name, capacity, thread_id, members,
+                 guild_id, channel_id, scheduled_at, reminder_sent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(message_id) DO UPDATE SET
-                thread_id = excluded.thread_id,
-                members   = excluded.members
+                thread_id     = excluded.thread_id,
+                members       = excluded.members,
+                reminder_sent = excluded.reminder_sent
             """,
             (
                 message_id,
@@ -201,6 +222,10 @@ async def upsert_session(message_id: str, session: dict) -> None:
                 session["capacity"],
                 session.get("thread_id"),
                 json.dumps(session["members"]),
+                session.get("guild_id"),
+                session.get("channel_id"),
+                session.get("scheduled_at"),
+                int(session.get("reminder_sent", False)),
             ),
         )
         await db.commit()
@@ -432,16 +457,25 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         leader_id = str(interaction.user.id)
         description = self.description_input.value.strip()
 
+        now = datetime.now()
+        scheduled = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if scheduled <= now:
+            scheduled += timedelta(days=1)
+
         session: dict = {
-            "activity": self._activity_name,
+            "activity":      self._activity_name,
             "activity_type": self._activity_type,
-            "time": time_str,
-            "description": description,
-            "leader_id": leader_id,
-            "leader_name": interaction.user.display_name,
-            "members": [leader_id],
-            "capacity": capacity,
-            "thread_id": None,
+            "time":          time_str,
+            "description":   description,
+            "leader_id":     leader_id,
+            "leader_name":   interaction.user.display_name,
+            "members":       [leader_id],
+            "capacity":      capacity,
+            "thread_id":     None,
+            "guild_id":      str(interaction.guild_id),
+            "channel_id":    str(interaction.channel_id),
+            "scheduled_at":  scheduled.isoformat(),
+            "reminder_sent": False,
         }
 
         view = LFGView()
@@ -484,9 +518,70 @@ class DestinyBot(commands.Bot):
 
     async def on_ready(self) -> None:
         print(f"✅ Бот запущено: {self.user}  (ID: {self.user.id})")
+        if not reminder_task.is_running():
+            reminder_task.start()
 
 
 bot = DestinyBot()
+
+
+@tasks.loop(minutes=1)
+async def reminder_task() -> None:
+    now = datetime.now()
+    window = timedelta(minutes=15)
+
+    for msg_id, session in list(lfg_sessions.items()):
+        if session.get("reminder_sent"):
+            continue
+        scheduled_str = session.get("scheduled_at")
+        if not scheduled_str:
+            continue
+
+        try:
+            scheduled = datetime.fromisoformat(scheduled_str)
+        except ValueError:
+            continue
+
+        time_left = scheduled - now
+        if not (timedelta(0) <= time_left <= window):
+            continue
+
+        guild_id   = session.get("guild_id")
+        channel_id = session.get("channel_id")
+        msg_url = (
+            f"https://discord.com/channels/{guild_id}/{channel_id}/{msg_id}"
+            if guild_id and channel_id else None
+        )
+
+        is_raid = session["activity_type"] == "raid"
+        color = discord.Color.from_rgb(255, 185, 0) if is_raid else discord.Color.from_rgb(130, 50, 210)
+        embed = discord.Embed(
+            title="🔔 Нагадування про активність!",
+            description=(
+                f"За **15 хвилин** починається "
+                f"**{session['activity']}** о **{session['time']}**!"
+            ),
+            color=color,
+        )
+        if msg_url:
+            embed.add_field(name="Посилання", value=f"[Перейти до збору]({msg_url})", inline=False)
+
+        for member_id in session["members"]:
+            try:
+                user = await bot.fetch_user(int(member_id))
+                await user.send(embed=embed)
+            except discord.Forbidden:
+                pass  # User has DMs closed
+            except Exception as e:
+                print(f"Помилка нагадування для {member_id}: {e}")
+
+        session["reminder_sent"] = True
+        await upsert_session(msg_id, session)
+
+
+@reminder_task.before_loop
+async def before_reminder() -> None:
+    await bot.wait_until_ready()
 
 
 @bot.tree.command(name="пошук-рейдів", description="Створити збір на рейд в Destiny 2")
