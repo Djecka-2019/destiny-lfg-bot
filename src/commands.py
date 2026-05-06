@@ -3,9 +3,72 @@ from discord import app_commands
 
 from bungie import get_activity_completions, search_bungie_player
 from constants import DUNGEONS, RAIDS
-from database import get_discord_profile, save_profile
+from database import add_ping_role, get_discord_profile, get_ping_roles, remove_ping_role, save_profile
 from embeds import build_profile_embed
 from views import ActivitySelectView
+
+
+ping_group = app_commands.Group(
+    name="пінг-ролі",
+    description="Керування ролями для пінгу при створенні збору",
+    default_permissions=discord.Permissions(manage_guild=True),
+)
+
+
+@ping_group.command(name="додати", description="Додати роль до списку пінгу")
+@app_commands.describe(роль="Роль, яку можна пінгувати при створенні збору")
+async def ping_add(interaction: discord.Interaction, роль: discord.Role) -> None:
+    await add_ping_role(str(interaction.guild_id), str(роль.id))
+    await interaction.response.send_message(
+        f"✅ Роль {роль.mention} додано до списку пінгу.", ephemeral=True
+    )
+
+
+@ping_group.command(name="видалити", description="Видалити роль зі списку пінгу")
+@app_commands.describe(роль="Роль для видалення")
+async def ping_remove(interaction: discord.Interaction, роль: discord.Role) -> None:
+    removed = await remove_ping_role(str(interaction.guild_id), str(роль.id))
+    if removed:
+        await interaction.response.send_message(
+            f"✅ Роль {роль.mention} видалено зі списку пінгу.", ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"ℹ️ Роль {роль.mention} не знайдена у списку.", ephemeral=True
+        )
+
+
+@ping_group.command(name="everyone", description="Увімкнути або вимкнути пінг @everyone")
+@app_commands.describe(ввімкнути="True — дозволити, False — заборонити")
+async def ping_everyone(interaction: discord.Interaction, ввімкнути: bool) -> None:
+    if ввімкнути:
+        await add_ping_role(str(interaction.guild_id), "everyone")
+        await interaction.response.send_message("✅ Пінг @everyone увімкнено.", ephemeral=True)
+    else:
+        removed = await remove_ping_role(str(interaction.guild_id), "everyone")
+        msg = "✅ Пінг @everyone вимкнено." if removed else "ℹ️ Пінг @everyone вже був вимкнений."
+        await interaction.response.send_message(msg, ephemeral=True)
+
+
+@ping_group.command(name="список", description="Показати налаштовані ролі для пінгу")
+async def ping_list(interaction: discord.Interaction) -> None:
+    roles = await get_ping_roles(str(interaction.guild_id))
+    if not roles:
+        await interaction.response.send_message(
+            "ℹ️ Жодної ролі не налаштовано. Додайте через `/пінг-ролі додати`.",
+            ephemeral=True,
+        )
+        return
+    lines = []
+    for rid in roles:
+        if rid == "everyone":
+            lines.append("• @everyone")
+        else:
+            role = interaction.guild.get_role(int(rid))
+            lines.append(f"• {role.mention}" if role else f"• <видалена роль {rid}>")
+    await interaction.response.send_message(
+        "📢 **Ролі для пінгу:**\n" + "\n".join(lines), ephemeral=True
+    )
 
 
 def _parse_bungie_name(raw: str) -> tuple[str, int] | None:
@@ -117,3 +180,5 @@ def setup_commands(bot) -> None:
 
         completions = await get_activity_completions(membership_type, membership_id)
         await interaction.followup.send(embed=build_profile_embed(bname, completions))
+
+    bot.tree.add_command(ping_group)

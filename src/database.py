@@ -50,6 +50,12 @@ async def init_db() -> None:
                 bungie_name     TEXT NOT NULL
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id   TEXT PRIMARY KEY,
+                ping_roles TEXT NOT NULL DEFAULT '[]'
+            )
+        """)
         await db.commit()
 
 
@@ -134,6 +140,47 @@ async def save_profile(
             (discord_id, membership_type, membership_id, bungie_name),
         )
         await db.commit()
+
+
+async def get_ping_roles(guild_id: str) -> list[str]:
+    async with aiosqlite.connect(DB_FILE) as db:
+        async with db.execute(
+            "SELECT ping_roles FROM guild_settings WHERE guild_id = ?", (guild_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+    return json.loads(row[0]) if row else []
+
+
+async def add_ping_role(guild_id: str, role_id: str) -> None:
+    roles = await get_ping_roles(guild_id)
+    if role_id not in roles:
+        roles.append(role_id)
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute(
+            """
+            INSERT INTO guild_settings (guild_id, ping_roles) VALUES (?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET ping_roles = excluded.ping_roles
+            """,
+            (guild_id, json.dumps(roles)),
+        )
+        await db.commit()
+
+
+async def remove_ping_role(guild_id: str, role_id: str) -> bool:
+    roles = await get_ping_roles(guild_id)
+    if role_id not in roles:
+        return False
+    roles.remove(role_id)
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute(
+            """
+            INSERT INTO guild_settings (guild_id, ping_roles) VALUES (?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET ping_roles = excluded.ping_roles
+            """,
+            (guild_id, json.dumps(roles)),
+        )
+        await db.commit()
+    return True
 
 
 async def get_discord_profile(discord_id: str) -> tuple[int, str, str] | None:

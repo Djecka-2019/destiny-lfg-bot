@@ -5,7 +5,7 @@ import discord
 
 from bungie import get_activity_completions
 from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD
-from database import delete_session, get_discord_profile, lfg_sessions, upsert_session
+from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, upsert_session
 from embeds import build_lfg_embed, build_profile_embed
 
 
@@ -195,6 +195,25 @@ class ActivitySelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         idx = int(self.values[0])
         activity_name = self._activities[idx]
+
+        ping_role_ids = await get_ping_roles(str(interaction.guild_id))
+        if ping_role_ids:
+            role_options: list[tuple[str, str]] = []
+            for rid in ping_role_ids:
+                if rid == "everyone":
+                    role_options.append(("everyone", "@everyone"))
+                else:
+                    role = interaction.guild.get_role(int(rid))
+                    if role:
+                        role_options.append((str(role.id), role.name))
+            if role_options:
+                view = PingRoleView(activity_name, self._activity_type, role_options)
+                await interaction.response.edit_message(
+                    content="📢 **Оберіть роль для пінгу або пропустіть:**",
+                    view=view,
+                )
+                return
+
         await interaction.response.send_modal(LFGModal(activity_name, self._activity_type))
 
 
@@ -202,6 +221,40 @@ class ActivitySelectView(discord.ui.View):
     def __init__(self, activities: list[str], activity_type: str) -> None:
         super().__init__(timeout=120)
         self.add_item(ActivitySelect(activities, activity_type))
+
+
+class PingRoleSelect(discord.ui.Select):
+    def __init__(self, activity_name: str, activity_type: str, role_options: list[tuple[str, str]]) -> None:
+        self._activity_name = activity_name
+        self._activity_type = activity_type
+        options = [
+            discord.SelectOption(
+                label=label,
+                value=value,
+                emoji="📢" if value == "everyone" else "🏷️",
+            )
+            for value, label in role_options
+        ]
+        super().__init__(placeholder="Оберіть роль для пінгу...", options=options)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(
+            LFGModal(self._activity_name, self._activity_type, mention=self.values[0])
+        )
+
+
+class PingRoleView(discord.ui.View):
+    def __init__(self, activity_name: str, activity_type: str, role_options: list[tuple[str, str]]) -> None:
+        super().__init__(timeout=120)
+        self._activity_name = activity_name
+        self._activity_type = activity_type
+        self.add_item(PingRoleSelect(activity_name, activity_type, role_options))
+
+    @discord.ui.button(label="Без пінгу", style=discord.ButtonStyle.secondary, emoji="🔕")
+    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(
+            LFGModal(self._activity_name, self._activity_type, mention=None)
+        )
 
 
 class LFGModal(discord.ui.Modal, title="Налаштування збору"):
@@ -220,10 +273,11 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         max_length=500,
     )
 
-    def __init__(self, activity_name: str, activity_type: str) -> None:
+    def __init__(self, activity_name: str, activity_type: str, mention: str | None = None) -> None:
         super().__init__()
         self._activity_name = activity_name
         self._activity_type = activity_type
+        self._mention = mention
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         time_str = self.time_input.value.strip()
@@ -273,8 +327,16 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             "reminder_sent": False,
         }
 
+        mention_content: str | None = None
+        if self._mention == "everyone":
+            mention_content = "@everyone"
+        elif self._mention:
+            mention_content = f"<@&{self._mention}>"
+
         view = LFGView()
-        await interaction.response.send_message(embed=build_lfg_embed(session), view=view)
+        await interaction.response.send_message(
+            content=mention_content, embed=build_lfg_embed(session), view=view
+        )
         message = await interaction.original_response()
 
         activity_label = "Рейд" if self._activity_type == "raid" else "Данж"
