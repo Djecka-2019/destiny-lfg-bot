@@ -18,12 +18,14 @@ def setup_tasks(bot) -> None:
 async def reminder_task() -> None:
     now = datetime.now(TZ_KYIV)
     window = timedelta(minutes=15)
+    print(f"[reminder] tick {now.strftime('%H:%M:%S')}, сесій: {len(lfg_sessions)}")
 
     for msg_id, session in list(lfg_sessions.items()):
         if session.get("reminder_sent"):
             continue
         scheduled_str = session.get("scheduled_at")
         if not scheduled_str:
+            print(f"[reminder] {msg_id}: немає scheduled_at")
             continue
 
         try:
@@ -34,6 +36,7 @@ async def reminder_task() -> None:
             continue
 
         time_left = scheduled - now
+        print(f"[reminder] {session['activity']} ({msg_id}): time_left={time_left}, вікно=[0, 15хв]")
         if not (timedelta(0) <= time_left <= window):
             continue
 
@@ -64,10 +67,11 @@ async def reminder_task() -> None:
             try:
                 user = await _bot.fetch_user(int(member_id))
                 await user.send(embed=embed)
+                print(f"[reminder] DM надіслано → {user}")
             except discord.Forbidden:
-                pass  # User has DMs closed
+                print(f"[reminder] {member_id}: DM заблоковано (privacy settings)")
             except Exception as e:
-                print(f"Помилка нагадування для {member_id}: {e}")
+                print(f"[reminder] {member_id}: помилка — {e}")
 
         session["reminder_sent"] = True
         await upsert_session(msg_id, session)
