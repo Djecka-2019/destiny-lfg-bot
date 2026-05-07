@@ -33,6 +33,8 @@ class DestinyBot(commands.Bot):
         await init_db()
         await load_sessions_from_db()
         self.add_view(LFGView())
+        for session in lfg_sessions.values():
+            self.add_view(LFGView(session))
         await fetch_activity_images()
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))

@@ -9,9 +9,33 @@ from embeds import build_lfg_embed
 
 logger = logging.getLogger("destiny_bot")
 
-class LFGView(discord.ui.View):
+class VoteButton(discord.ui.Button):
     def __init__(self) -> None:
+        super().__init__(
+            label="Проголосувати",
+            style=discord.ButtonStyle.blurple,
+            custom_id="lfg:vote",
+            emoji="🗳️"
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        msg_id = str(interaction.message.id)
+        session = lfg_sessions.get(msg_id)
+        if not session or not session.get("options"):
+            await interaction.response.send_message("Голосування неактивне для цього збору.", ephemeral=True)
+            return
+        user_id = str(interaction.user.id)
+        if user_id not in session["members"] and user_id not in session.get("reserves", []):
+            await interaction.response.send_message("Тільки учасники збору можуть голосувати.", ephemeral=True)
+            return
+        view = VoteSelectView(msg_id, session["options"])
+        await interaction.response.send_message("Оберіть активність, за яку хочете проголосувати:", view=view, ephemeral=True)
+
+class LFGView(discord.ui.View):
+    def __init__(self, session: dict = None) -> None:
         super().__init__(timeout=None)
+        if session and session.get("options"):
+            self.add_item(VoteButton())
 
     async def _update_member_stats(self, interaction: discord.Interaction, session: dict, user_id: str) -> None:
         if user_id in session.get("member_data", {}):
@@ -119,29 +143,6 @@ class LFGView(discord.ui.View):
             await interaction.followup.send(
                 "⏳ Місця заповнені — тебе додано до запасних.", ephemeral=True
             )
-
-    @discord.ui.button(
-        label="Проголосувати",
-        style=discord.ButtonStyle.blurple,
-        custom_id="lfg:vote",
-        emoji="🗳️",
-    )
-    async def vote_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        msg_id = str(interaction.message.id)
-        session = lfg_sessions.get(msg_id)
-        if not session or not session.get("options"):
-            await interaction.response.send_message("Голосування неактивне для цього збору.", ephemeral=True)
-            return
-
-        user_id = str(interaction.user.id)
-        if user_id not in session["members"] and user_id not in session.get("reserves", []):
-            await interaction.response.send_message("Тільки учасники збору можуть голосувати.", ephemeral=True)
-            return
-
-        view = VoteSelectView(msg_id, session["options"])
-        await interaction.response.send_message("Оберіть активність, за яку хочете проголосувати:", view=view, ephemeral=True)
 
     @discord.ui.button(
         label="Закрити збір",
@@ -364,9 +365,11 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             "votes":         {},
             "member_data":   {},
         }
-        view = LFGView()
+        view = LFGView(session)
         await view._update_member_stats(interaction, session, leader_id)
+
         mention_content = None
+
         if self._mention == "everyone":
             mention_content = "@everyone"
         elif self._mention:
