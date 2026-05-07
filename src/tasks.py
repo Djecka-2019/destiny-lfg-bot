@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import discord
 from discord.ext import tasks
 from constants import TZ_KYIV, RAIDS, DUNGEONS, RANDOM_RAID, RANDOM_DUNGEON
-from database import lfg_sessions, upsert_session
+from database import lfg_sessions, upsert_session, get_ping_roles
 from embeds import build_lfg_embed
 
 logger = logging.getLogger("destiny_bot")
@@ -99,6 +99,27 @@ async def reminder_task() -> None:
                 logger.warning(f"[reminder] {member_id}: DM заблоковано (privacy settings)")
             except Exception as e:
                 logger.error(f"[reminder] {member_id}: помилка — {e}")
+
+        if len(session["members"]) < session["capacity"]:
+            try:
+                channel = await _bot.fetch_channel(int(channel_id))
+                if channel:
+                    mention_part = ""
+                    ping_role_ids = await get_ping_roles(guild_id)
+                    if ping_role_ids:
+                        if "everyone" in ping_role_ids:
+                            mention_part = "@everyone "
+                        else:
+                            mention_part = " ".join([f"<@&{rid}>" for rid in ping_role_ids if rid != "everyone"]) + " "
+                    
+                    slots_left = session["capacity"] - len(session["members"])
+                    await channel.send(
+                        f"📢 {mention_part}**Є вільні місця!**\n"
+                        f"На **{session['activity']}** ({display_time}) залишилося **{slots_left}** місць. "
+                        f"Приєднуйтесь: {msg_url}"
+                    )
+            except Exception as e:
+                logger.error(f"[reminder] Не вдалося надіслати загальне сповіщення: {e}")
 
         session["reminder_sent"] = True
         await upsert_session(msg_id, session)
