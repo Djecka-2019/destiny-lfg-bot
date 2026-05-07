@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime, timedelta
 
@@ -7,6 +8,8 @@ from bungie import get_activity_completions
 from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV
 from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, upsert_session
 from embeds import build_lfg_embed, build_profile_embed
+
+logger = logging.getLogger("destiny_bot")
 
 
 class LFGView(discord.ui.View):
@@ -353,7 +356,7 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             )
             session["thread_id"] = str(thread.id)
         except discord.HTTPException as e:
-            print(f"Не вдалося створити гілку: {e}")
+            logger.error(f"Не вдалося створити гілку: {e}")
 
         msg_id = str(message.id)
         lfg_sessions[msg_id] = session

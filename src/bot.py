@@ -1,5 +1,6 @@
 import asyncio
 import os
+import logging
 
 import discord
 from discord.ext import commands
@@ -10,6 +11,14 @@ from commands import setup_commands
 from database import init_db, lfg_sessions, load_sessions_from_db
 from tasks import reminder_task, setup_tasks
 from views import LFGView
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("destiny_bot")
 
 load_dotenv()
 
@@ -34,13 +43,13 @@ class DestinyBot(commands.Bot):
             guild_synced = await self.tree.sync(guild=guild)
             self.tree.clear_commands(guild=None)
             await self.tree.sync()
-            print(f"Синхронізовано {len(guild_synced)} команд(и) для сервера {GUILD_ID}. Завантажено сесій: {len(lfg_sessions)}")
+            logger.info(f"Синхронізовано {len(guild_synced)} команд(и) для сервера {GUILD_ID}. Завантажено сесій: {len(lfg_sessions)}")
         else:
             synced = await self.tree.sync()
-            print(f"Синхронізовано {len(synced)} команд(и) глобально. Завантажено сесій: {len(lfg_sessions)}")
+            logger.info(f"Синхронізовано {len(synced)} команд(и) глобально. Завантажено сесій: {len(lfg_sessions)}")
 
     async def on_ready(self) -> None:
-        print(f"✅ Бот запущено: {self.user}  (ID: {self.user.id})")
+        logger.info(f"✅ Бот запущено: {self.user}  (ID: {self.user.id})")
         if not reminder_task.is_running():
             reminder_task.start()
 
@@ -51,5 +60,6 @@ setup_tasks(bot)
 
 if __name__ == "__main__":
     if not TOKEN:
-        raise RuntimeError("DISCORD_TOKEN не знайдено! Створіть файл .env з токеном.")
+        logger.error("DISCORD_TOKEN не знайдено! Створіть файл .env з токеном.")
+        exit(1)
     asyncio.run(bot.start(TOKEN))

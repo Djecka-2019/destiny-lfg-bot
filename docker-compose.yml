@@ -3,6 +3,8 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    environment:
+      - TZ=Europe/Kyiv
     volumes:
       - bot-data:/app/data
 

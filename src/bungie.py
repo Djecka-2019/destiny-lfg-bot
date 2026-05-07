@@ -1,8 +1,11 @@
 import os
+import logging
 
 import aiohttp
 
 from constants import ACTIVITY_EN_NAMES, BUNGIE_BASE
+
+logger = logging.getLogger("destiny_bot")
 
 activity_images: dict[str, str] = {}
 activity_hashes: dict[str, set[int]] = {}
@@ -11,7 +14,7 @@ activity_hashes: dict[str, set[int]] = {}
 async def fetch_activity_images() -> None:
     api_key = os.getenv("BUNGIE_API_KEY")
     if not api_key:
-        print("⚠️  BUNGIE_API_KEY не задано — прев'ю активностей вимкнено")
+        logger.warning("BUNGIE_API_KEY не задано — прев'ю активностей вимкнено")
         return
 
     headers = {"X-API-Key": api_key}
@@ -23,11 +26,11 @@ async def fetch_activity_images() -> None:
                 f"{BUNGIE_BASE}/Platform/Destiny2/Manifest/", headers=headers
             ) as resp:
                 if resp.status != 200:
-                    print(f"⚠️  Bungie Manifest HTTP {resp.status}")
+                    logger.warning(f"Bungie Manifest HTTP {resp.status}")
                     return
                 manifest = await resp.json()
         except Exception as e:
-            print(f"⚠️  Не вдалося отримати маніфест Bungie: {e}")
+            logger.error(f"Не вдалося отримати маніфест Bungie: {e}")
             return
 
         try:
@@ -35,17 +38,17 @@ async def fetch_activity_images() -> None:
                 "DestinyActivityDefinition"
             ]
         except KeyError:
-            print("⚠️  Несподівана структура маніфесту Bungie")
+            logger.warning("Несподівана структура маніфесту Bungie")
             return
 
         try:
             async with http.get(f"{BUNGIE_BASE}{def_path}") as resp:
                 if resp.status != 200:
-                    print(f"⚠️  DestinyActivityDefinition HTTP {resp.status}")
+                    logger.warning(f"DestinyActivityDefinition HTTP {resp.status}")
                     return
                 activity_defs: dict = await resp.json(content_type=None)
         except Exception as e:
-            print(f"⚠️  Не вдалося завантажити DestinyActivityDefinition: {e}")
+            logger.error(f"Не вдалося завантажити DestinyActivityDefinition: {e}")
             return
 
     _INVALID = ("missing_icon", "placeholder.jpg")
@@ -73,7 +76,7 @@ async def fetch_activity_images() -> None:
             activity_images[uk_name] = url
             found += 1
 
-    print(f"Прев'ю активностей: {found}/{len(ACTIVITY_EN_NAMES)} знайдено")
+    logger.info(f"Прев'ю активностей: {found}/{len(ACTIVITY_EN_NAMES)} знайдено")
 
     en_to_uk = {en: uk for uk, en in ACTIVITY_EN_NAMES.items()}
     for hash_str, entry in activity_defs.items():
@@ -88,7 +91,7 @@ async def fetch_activity_images() -> None:
                 pass
 
     total_hashes = sum(len(v) for v in activity_hashes.values())
-    print(f"Хеші активностей: {total_hashes} варіантів для {len(activity_hashes)} активностей")
+    logger.info(f"Хеші активностей: {total_hashes} варіантів для {len(activity_hashes)} активностей")
 
 
 async def search_bungie_player(display_name: str, display_name_code: int) -> dict | None:
