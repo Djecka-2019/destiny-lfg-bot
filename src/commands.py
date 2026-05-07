@@ -82,6 +82,52 @@ def _parse_bungie_name(raw: str) -> tuple[str, int] | None:
 
 
 def setup_commands(bot) -> None:
+    @bot.tree.command(name="допомога", description="Інформація про можливості бота та доступні команди")
+    async def help_command(interaction: discord.Interaction) -> None:
+        embed = discord.Embed(
+            title="Довідка по роботі з Destiny LFG",
+            description=(
+                "Цей бот допомагає організовувати рейди та данжі, відстежувати статистику "
+                "гравців та автоматизувати нагадування про збори."
+            ),
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="⚔️ Організація зборів",
+            value=(
+                "`/пошук-рейдів` — Створити збір на рейд (6 місць).\n"
+                "`/пошук-данжів` — Створити збір на данж (3 місця).\n"
+                "Після вибору активності ви зможете вказати час та опис. Бот автоматично "
+                "створить гілку (thread) для обговорення та надішле нагадування за 15 хвилин до початку."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="📊 Профіль та статистика",
+            value=(
+                "`/додати-аккаунт` — Прив'язати Bungie Name до вашого Discord.\n"
+                "`/профіль` — Переглянути кількість проходжень рейдів та данжів.\n"
+                "У вікні збору можна натиснути кнопку **Статистика команди**, щоб побачити "
+                "досвідченість усіх учасників (кількість закриттів та наявність статусу Шерпи)."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="⚙️ Налаштування (для адмінів)",
+            value=(
+                "`/пінг-ролі список` — Переглянути ролі для сповіщень.\n"
+                "`/пінг-ролі додати` — Додати роль, яку можна пінгувати при створенні збору.\n"
+                "`/пінг-ролі everyone` — Дозволити або заборонити пінг @everyone."
+            ),
+            inline=False
+        )
+
+        embed.set_footer(text="Бот працює за київським часом (GMT+3).")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @bot.tree.command(name="пошук-рейдів", description="Створити збір на рейд в Destiny 2")
     async def search_raids(interaction: discord.Interaction) -> None:
         view = ActivitySelectView(RAIDS, "raid")
