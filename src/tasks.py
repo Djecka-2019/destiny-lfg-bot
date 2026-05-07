@@ -1,20 +1,18 @@
 import logging
+import random
 from datetime import datetime, timedelta
-
 import discord
 from discord.ext import tasks
-
-from constants import TZ_KYIV
+from constants import TZ_KYIV, RAIDS, DUNGEONS, RANDOM_RAID, RANDOM_DUNGEON
 from database import lfg_sessions, upsert_session
+from embeds import build_lfg_embed
 
 logger = logging.getLogger("destiny_bot")
 _bot = None
 
-
 def setup_tasks(bot) -> None:
     global _bot
     _bot = bot
-
 
 @tasks.loop(minutes=1)
 async def reminder_task() -> None:
@@ -41,18 +39,44 @@ async def reminder_task() -> None:
         if not (timedelta(0) <= time_left <= window):
             continue
 
-        logger.info(f"[reminder] Надсилаю нагадування для {session['activity']} ({msg_id}), початок о {scheduled_str}")
+        activity = session["activity"]
+        options = session.get("options", [])
+        
+        if activity in (RANDOM_RAID, RANDOM_DUNGEON):
+            pool = [r for r in (RAIDS if activity == RANDOM_RAID else DUNGEONS) if r not in (RANDOM_RAID, RANDOM_DUNGEON)]
+            session["activity"] = random.choice(pool)
+            logger.info(f"[reminder] {msg_id}: Випадково обрано {session['activity']}")
+        elif options:
+            votes = session.get("votes", {})
+            if votes:
+                tally = {}
+                for v in votes.values():
+                    tally[v] = tally.get(v, 0) + 1
+                winner = max(tally, key=tally.get)
+                session["activity"] = winner
+                logger.info(f"[reminder] {msg_id}: Результат голосування — {winner}")
+            else:
+                session["activity"] = random.choice(options)
+                logger.info(f"[reminder] {msg_id}: Голосів немає, обрано випадково — {session['activity']}")
+            session["options"] = []
 
+        logger.info(f"[reminder] Надсилаю нагадування для {session['activity']} ({msg_id}), початок о {scheduled_str}")
         guild_id   = session.get("guild_id")
         channel_id = session.get("channel_id")
+        
+        try:
+            channel = await _bot.fetch_channel(int(channel_id))
+            message = await channel.fetch_message(int(msg_id))
+            await message.edit(embed=build_lfg_embed(session))
+        except Exception as e:
+            logger.error(f"[reminder] Не вдалося оновити повідомлення {msg_id}: {e}")
+
         msg_url = (
             f"https://discord.com/channels/{guild_id}/{channel_id}/{msg_id}"
             if guild_id and channel_id else None
         )
-
         ts = int(scheduled.timestamp())
         display_time = f"<t:{ts}:t>"
-
         is_raid = session["activity_type"] == "raid"
         color = discord.Color.from_rgb(255, 185, 0) if is_raid else discord.Color.from_rgb(130, 50, 210)
         embed = discord.Embed(
@@ -78,7 +102,6 @@ async def reminder_task() -> None:
 
         session["reminder_sent"] = True
         await upsert_session(msg_id, session)
-
 
 @reminder_task.before_loop
 async def before_reminder() -> None:

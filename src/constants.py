@@ -1,8 +1,9 @@
 import zoneinfo
 
 TZ_KYIV = zoneinfo.ZoneInfo("Europe/Kyiv")
-
 BUNGIE_BASE = "https://www.bungie.net"
+RANDOM_RAID = "Випадковий рейд"
+RANDOM_DUNGEON = "Випадковий данж"
 
 ACTIVITY_EN_NAMES: dict[str, str] = {
     "Склеп Скла": "Vault of Glass",
@@ -27,6 +28,7 @@ ACTIVITY_EN_NAMES: dict[str, str] = {
 }
 
 RAIDS = [
+    RANDOM_RAID,
     "Склеп Скла",
     "Останнє бажання",
     "Сад Порятунку",
@@ -40,6 +42,7 @@ RAIDS = [
 ]
 
 DUNGEONS = [
+    RANDOM_DUNGEON,
     "Яма Єресі",
     "Пророцтво",
     "Хватка Алчності",

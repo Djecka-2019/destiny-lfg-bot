@@ -1,14 +1,9 @@
 import json
 import os
-
 import aiosqlite
 
 DB_FILE = os.path.join(os.getenv("DATA_DIR", "."), "lfg_sessions.db")
-
-# In-memory cache: message_id → session dict.
-# Populated from DB at startup; DB is the source of truth on disk.
 lfg_sessions: dict[str, dict] = {}
-
 
 async def init_db() -> None:
     async with aiosqlite.connect(DB_FILE) as db:
@@ -28,7 +23,10 @@ async def init_db() -> None:
                 guild_id      TEXT,
                 channel_id    TEXT,
                 scheduled_at  TEXT,
-                reminder_sent INTEGER NOT NULL DEFAULT 0
+                reminder_sent INTEGER NOT NULL DEFAULT 0,
+                member_data   TEXT NOT NULL DEFAULT '{}',
+                votes         TEXT NOT NULL DEFAULT '{}',
+                options       TEXT NOT NULL DEFAULT '[]'
             )
         """)
         for col, typedef in [
@@ -37,11 +35,14 @@ async def init_db() -> None:
             ("scheduled_at",  "TEXT"),
             ("reminder_sent", "INTEGER NOT NULL DEFAULT 0"),
             ("reserves",      "TEXT NOT NULL DEFAULT '[]'"),
+            ("member_data",   "TEXT NOT NULL DEFAULT '{}'"),
+            ("votes",         "TEXT NOT NULL DEFAULT '{}'"),
+            ("options",       "TEXT NOT NULL DEFAULT '[]'"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
             except aiosqlite.OperationalError:
-                pass  # Column already exists
+                pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS profiles (
                 discord_id      TEXT PRIMARY KEY,
@@ -57,7 +58,6 @@ async def init_db() -> None:
             )
         """)
         await db.commit()
-
 
 async def load_sessions_from_db() -> None:
     async with aiosqlite.connect(DB_FILE) as db:
@@ -79,8 +79,10 @@ async def load_sessions_from_db() -> None:
                     "channel_id":    row["channel_id"],
                     "scheduled_at":  row["scheduled_at"],
                     "reminder_sent": bool(row["reminder_sent"]),
+                    "member_data":   json.loads(row["member_data"] if row["member_data"] else "{}"),
+                    "votes":         json.loads(row["votes"] if row["votes"] else "{}"),
+                    "options":       json.loads(row["options"] if row["options"] else "[]"),
                 }
-
 
 async def upsert_session(message_id: str, session: dict) -> None:
     async with aiosqlite.connect(DB_FILE) as db:
@@ -89,13 +91,17 @@ async def upsert_session(message_id: str, session: dict) -> None:
             INSERT INTO sessions
                 (message_id, activity, activity_type, time_str, description,
                  leader_id, leader_name, capacity, thread_id, members, reserves,
-                 guild_id, channel_id, scheduled_at, reminder_sent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 guild_id, channel_id, scheduled_at, reminder_sent,
+                 member_data, votes, options)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(message_id) DO UPDATE SET
                 thread_id     = excluded.thread_id,
                 members       = excluded.members,
                 reserves      = excluded.reserves,
-                reminder_sent = excluded.reminder_sent
+                reminder_sent = excluded.reminder_sent,
+                member_data   = excluded.member_data,
+                votes         = excluded.votes,
+                options       = excluded.options
             """,
             (
                 message_id,
@@ -113,16 +119,17 @@ async def upsert_session(message_id: str, session: dict) -> None:
                 session.get("channel_id"),
                 session.get("scheduled_at"),
                 int(session.get("reminder_sent", False)),
+                json.dumps(session.get("member_data", {})),
+                json.dumps(session.get("votes", {})),
+                json.dumps(session.get("options", [])),
             ),
         )
         await db.commit()
-
 
 async def delete_session(message_id: str) -> None:
     async with aiosqlite.connect(DB_FILE) as db:
         await db.execute("DELETE FROM sessions WHERE message_id = ?", (message_id,))
         await db.commit()
-
 
 async def save_profile(
     discord_id: str, membership_type: int, membership_id: str, bungie_name: str
@@ -141,7 +148,6 @@ async def save_profile(
         )
         await db.commit()
 
-
 async def get_ping_roles(guild_id: str) -> list[str]:
     async with aiosqlite.connect(DB_FILE) as db:
         async with db.execute(
@@ -149,7 +155,6 @@ async def get_ping_roles(guild_id: str) -> list[str]:
         ) as cursor:
             row = await cursor.fetchone()
     return json.loads(row[0]) if row else []
-
 
 async def add_ping_role(guild_id: str, role_id: str) -> None:
     roles = await get_ping_roles(guild_id)
@@ -164,7 +169,6 @@ async def add_ping_role(guild_id: str, role_id: str) -> None:
             (guild_id, json.dumps(roles)),
         )
         await db.commit()
-
 
 async def remove_ping_role(guild_id: str, role_id: str) -> bool:
     roles = await get_ping_roles(guild_id)
@@ -181,7 +185,6 @@ async def remove_ping_role(guild_id: str, role_id: str) -> bool:
         )
         await db.commit()
     return True
-
 
 async def get_discord_profile(discord_id: str) -> tuple[int, str, str] | None:
     async with aiosqlite.connect(DB_FILE) as db:

@@ -1,10 +1,7 @@
 from datetime import datetime
-
 import discord
-
 from bungie import activity_images
 from constants import DUNGEONS, RAIDS, SHERPA_THRESHOLD
-
 
 def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     activity = session["activity"]
@@ -16,6 +13,9 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     capacity: int = session["capacity"]
     leader_id = session["leader_id"]
     leader_name = session["leader_name"]
+    member_data = session.get("member_data", {})
+    options = session.get("options", [])
+    votes = session.get("votes", {})
 
     is_raid = activity_type == "raid"
     if closed:
@@ -27,7 +27,6 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
 
     activity_label = "Рейд" if is_raid else "Данж"
     emoji = "⚔️" if is_raid else "🗡️"
-
     scheduled_at = session.get("scheduled_at")
     if scheduled_at:
         try:
@@ -50,18 +49,30 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     if description:
         embed.add_field(name="📝 Опис / вимоги", value=description, inline=False)
 
+    if options:
+        tally = {opt: 0 for opt in options}
+        for v in votes.values():
+            if v in tally:
+                tally[v] += 1
+        vote_lines = [f"• **{opt}**: {count} голос(ів)" for opt, count in tally.items()]
+        embed.add_field(name="🗳️ Голосування за активність", value="\n".join(vote_lines), inline=False)
+
+    def _format_member(mid, i):
+        crown = " 👑" if mid == leader_id else ""
+        stats = member_data.get(mid)
+        stats_str = f" `[{stats}]`" if stats else ""
+        return f"`{i + 1}.` <@{mid}>{crown}{stats_str}"
+
     slots_lines = []
     for i in range(capacity):
         if i < len(members):
-            mid = members[i]
-            crown = " 👑" if mid == leader_id else ""
-            slots_lines.append(f"`{i + 1}.` <@{mid}>{crown}")
+            slots_lines.append(_format_member(members[i], i))
         else:
             slots_lines.append(f"`{i + 1}.` *Вільне місце*")
     embed.add_field(name="👤 Учасники", value="\n".join(slots_lines), inline=False)
 
     if reserves:
-        reserve_lines = [f"`{i + 1}.` <@{mid}>" for i, mid in enumerate(reserves)]
+        reserve_lines = [_format_member(mid, i) for i, mid in enumerate(reserves)]
         embed.add_field(name="⏳ Запасні", value="\n".join(reserve_lines), inline=False)
 
     if closed:
@@ -72,20 +83,16 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
         status = "✅ Набір відкрито"
 
     embed.set_footer(text=f"Організатор: {leader_name}  •  {status}")
-
     image_url = activity_images.get(activity)
     if image_url:
         embed.set_image(url=image_url)
-
     return embed
-
 
 def build_profile_embed(bungie_name: str, completions: dict[str, int]) -> discord.Embed:
     embed = discord.Embed(
         title=f"🎮 {bungie_name}",
         color=discord.Color.from_rgb(255, 185, 0),
     )
-
     def _lines(activity_list: list[str]) -> tuple[list[str], int]:
         lines, total = [], 0
         for name in activity_list:
@@ -97,7 +104,6 @@ def build_profile_embed(bungie_name: str, completions: dict[str, int]) -> discor
 
     raid_lines, total_raids = _lines(RAIDS)
     dungeon_lines, total_dungeons = _lines(DUNGEONS)
-
     embed.add_field(
         name=f"⚔️ Рейди — всього: **{total_raids}**",
         value="\n".join(raid_lines),

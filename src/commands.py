@@ -1,19 +1,16 @@
 import discord
 from discord import app_commands
-
 from bungie import get_activity_completions, search_bungie_player
 from constants import DUNGEONS, RAIDS
 from database import add_ping_role, get_discord_profile, get_ping_roles, remove_ping_role, save_profile
-from embeds import build_profile_embed
+from embeds import build_profile_embed, build_lfg_embed
 from views import ActivitySelectView
-
 
 ping_group = app_commands.Group(
     name="пінг-ролі",
     description="Керування ролями для пінгу при створенні збору",
     default_permissions=discord.Permissions(manage_guild=True),
 )
-
 
 @ping_group.command(name="додати", description="Додати роль до списку пінгу")
 @app_commands.describe(роль="Роль, яку можна пінгувати при створенні збору")
@@ -22,7 +19,6 @@ async def ping_add(interaction: discord.Interaction, роль: discord.Role) -> 
     await interaction.response.send_message(
         f"✅ Роль {роль.mention} додано до списку пінгу.", ephemeral=True
     )
-
 
 @ping_group.command(name="видалити", description="Видалити роль зі списку пінгу")
 @app_commands.describe(роль="Роль для видалення")
@@ -37,7 +33,6 @@ async def ping_remove(interaction: discord.Interaction, роль: discord.Role) 
             f"ℹ️ Роль {роль.mention} не знайдена у списку.", ephemeral=True
         )
 
-
 @ping_group.command(name="everyone", description="Увімкнути або вимкнути пінг @everyone")
 @app_commands.describe(ввімкнути="True — дозволити, False — заборонити")
 async def ping_everyone(interaction: discord.Interaction, ввімкнути: bool) -> None:
@@ -48,7 +43,6 @@ async def ping_everyone(interaction: discord.Interaction, ввімкнути: bo
         removed = await remove_ping_role(str(interaction.guild_id), "everyone")
         msg = "✅ Пінг @everyone вимкнено." if removed else "ℹ️ Пінг @everyone вже був вимкнений."
         await interaction.response.send_message(msg, ephemeral=True)
-
 
 @ping_group.command(name="список", description="Показати налаштовані ролі для пінгу")
 async def ping_list(interaction: discord.Interaction) -> None:
@@ -70,7 +64,6 @@ async def ping_list(interaction: discord.Interaction) -> None:
         "📢 **Ролі для пінгу:**\n" + "\n".join(lines), ephemeral=True
     )
 
-
 def _parse_bungie_name(raw: str) -> tuple[str, int] | None:
     if "#" not in raw:
         return None
@@ -79,7 +72,6 @@ def _parse_bungie_name(raw: str) -> tuple[str, int] | None:
         return name.strip(), int(code_str.strip())
     except ValueError:
         return None
-
 
 def setup_commands(bot) -> None:
     @bot.tree.command(name="допомога", description="Інформація про можливості бота та доступні команди")
@@ -98,8 +90,9 @@ def setup_commands(bot) -> None:
             value=(
                 "`/пошук-рейдів` — Створити збір на рейд (6 місць).\n"
                 "`/пошук-данжів` — Створити збір на данж (3 місця).\n"
-                "Після вибору активності ви зможете вказати час та опис. Бот автоматично "
-                "створить гілку (thread) для обговорення та надішле нагадування за 15 хвилин до початку."
+                "При виборі можна обрати **декілька активностей** для голосування або "
+                "**випадковий рейд**, який буде визначено ботом перед початком.\n"
+                "Бот автоматично створить гілку для обговорення та надішле нагадування за 15 хвилин."
             ),
             inline=False
         )
@@ -108,9 +101,9 @@ def setup_commands(bot) -> None:
             name="📊 Профіль та статистика",
             value=(
                 "`/додати-аккаунт` — Прив'язати Bungie Name до вашого Discord.\n"
-                "`/профіль` — Переглянути кількість проходжень рейдів та данжів.\n"
-                "У вікні збору можна натиснути кнопку **Статистика команди**, щоб побачити "
-                "досвідченість усіх учасників (кількість закриттів та наявність статусу Шерпи)."
+                "`/профіль` — Переглянути вашу статистику.\n"
+                "Статистика (кількість проходжень / шерпи) автоматично відображається "
+                "біля вашого ніка в списку учасників збору."
             ),
             inline=False
         )
@@ -146,12 +139,10 @@ def setup_commands(bot) -> None:
     @app_commands.describe(bungie_name="Ваш Bungie name у форматі Ім'я#1234")
     async def link_account(interaction: discord.Interaction, bungie_name: str) -> None:
         await interaction.response.defer(ephemeral=True)
-
         parsed = _parse_bungie_name(bungie_name)
         if not parsed:
             await interaction.followup.send("❌ Формат: `Ім'я#1234`", ephemeral=True)
             return
-
         player = await search_bungie_player(*parsed)
         if not player:
             await interaction.followup.send(
@@ -160,7 +151,6 @@ def setup_commands(bot) -> None:
                 ephemeral=True,
             )
             return
-
         await save_profile(
             str(interaction.user.id),
             player["membership_type"],
@@ -183,7 +173,6 @@ def setup_commands(bot) -> None:
         bungie_name: str | None = None,
     ) -> None:
         await interaction.response.defer()
-
         membership_type: int
         membership_id: str
         bname: str
@@ -198,7 +187,6 @@ def setup_commands(bot) -> None:
                 )
                 return
             membership_type, membership_id, bname = result
-
         elif bungie_name:
             parsed = _parse_bungie_name(bungie_name)
             if not parsed:
@@ -213,7 +201,6 @@ def setup_commands(bot) -> None:
             membership_type = player["membership_type"]
             membership_id   = player["membership_id"]
             bname           = player["bungie_name"]
-
         else:
             result = await get_discord_profile(str(interaction.user.id))
             if not result:
