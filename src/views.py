@@ -2,12 +2,80 @@ import logging
 import re
 from datetime import date as date_type, datetime, timedelta
 import discord
-from bungie import get_activity_completions, get_activity_stats, search_bungie_player_by_name
+from bungie import commendation_defs, get_activity_completions, get_activity_stats, search_bungie_player_by_name
 from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON
-from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, upsert_session
+from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, save_commendation, upsert_session
 from embeds import build_lfg_embed
 
 logger = logging.getLogger("destiny_bot")
+
+class _CommendationChoice(discord.ui.Button):
+    def __init__(self, index: int, name_uk: str, emoji: str) -> None:
+        super().__init__(label=name_uk, emoji=emoji, style=discord.ButtonStyle.primary, row=0)
+        self._index = index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view: CommendationWizardView = self.view
+        teammate_id = view._teammates[view._current]
+        view._commendations[teammate_id] = self._index
+        comm_name = commendation_defs[self._index]["name_uk"]
+        await save_commendation(view._session_id, str(interaction.user.id), teammate_id, comm_name)
+        await view._advance(interaction)
+
+
+class _CommendationSkip(discord.ui.Button):
+    def __init__(self) -> None:
+        super().__init__(label="Пропустити", style=discord.ButtonStyle.secondary, emoji="➡️", row=1)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await self.view._advance(interaction)
+
+
+class CommendationWizardView(discord.ui.View):
+    def __init__(self, teammates: list[str], activity: str, session_id: str) -> None:
+        super().__init__(timeout=300)
+        self._teammates = teammates
+        self._activity = activity
+        self._session_id = session_id
+        self._current = 0
+        self._commendations: dict[str, int] = {}
+        for i, comm in enumerate(commendation_defs):
+            self.add_item(_CommendationChoice(i, comm["name_uk"], comm["emoji"]))
+        self.add_item(_CommendationSkip())
+
+    def build_step_embed(self) -> discord.Embed:
+        teammate_id = self._teammates[self._current]
+        idx = self._current + 1
+        total = len(self._teammates)
+        embed = discord.Embed(
+            title=f"🏆 Похвали після {self._activity}",
+            description=f"Оберіть похвалу для <@{teammate_id}>\n({idx} з {total})",
+            color=discord.Color.gold(),
+        )
+        return embed
+
+    def _build_summary_embed(self) -> discord.Embed:
+        embed = discord.Embed(title="🏆 Похвали роздано!", color=discord.Color.gold())
+        for tm_id, comm_idx in self._commendations.items():
+            comm = commendation_defs[comm_idx]
+            embed.add_field(
+                name=f"{comm['emoji']} {comm['name_uk']}",
+                value=f"<@{tm_id}>",
+                inline=True,
+            )
+        if not self._commendations:
+            embed.description = "Ви не роздали жодної похвали."
+        return embed
+
+    async def _advance(self, interaction: discord.Interaction) -> None:
+        self._current += 1
+        if self._current >= len(self._teammates):
+            for item in self.children:
+                item.disabled = True
+            await interaction.response.edit_message(embed=self._build_summary_embed(), view=self)
+        else:
+            await interaction.response.edit_message(embed=self.build_step_embed())
+
 
 class VoteButton(discord.ui.Button):
     def __init__(self) -> None:
@@ -184,6 +252,60 @@ class LFGView(discord.ui.View):
 
         del lfg_sessions[msg_id]
         await delete_session(msg_id)
+
+    @discord.ui.button(
+        label="Роздати похвали",
+        style=discord.ButtonStyle.blurple,
+        custom_id="lfg:commend",
+        emoji="🏆",
+    )
+    async def commend_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        msg_id = str(interaction.message.id)
+        session = lfg_sessions.get(msg_id)
+        if not session:
+            await interaction.response.send_message("Ця активність вже не активна.", ephemeral=True)
+            return
+
+        if str(interaction.user.id) != session["leader_id"]:
+            await interaction.response.send_message(
+                "❌ Лише організатор може запустити роздачу похвал.", ephemeral=True
+            )
+            return
+
+        all_members: list = session["members"]
+        if len(all_members) < 2:
+            await interaction.response.send_message(
+                "ℹ️ Для похвал потрібно мінімум 2 учасники.", ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            f"✅ Надсилаю запит на похвали {len(all_members)} учасникам...", ephemeral=True
+        )
+
+        activity = session["activity"]
+        bot = interaction.client
+        sent, blocked = 0, 0
+        for member_id in all_members:
+            teammates = [m for m in all_members if m != member_id]
+            try:
+                user = await bot.fetch_user(int(member_id))
+                view = CommendationWizardView(teammates, activity, msg_id)
+                await user.send(embed=view.build_step_embed(), view=view)
+                sent += 1
+            except discord.Forbidden:
+                blocked += 1
+                logger.warning(f"[commend] DM заблоковано: {member_id}")
+            except Exception as e:
+                logger.error(f"[commend] Помилка DM для {member_id}: {e}")
+
+        if blocked:
+            await interaction.followup.send(
+                f"⚠️ {blocked} учасників мають закриті DM і не отримали запит.",
+                ephemeral=True,
+            )
 
 class ActivitySelect(discord.ui.Select):
     def __init__(self, activities: list[str], activity_type: str) -> None:

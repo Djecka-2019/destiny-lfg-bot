@@ -1,6 +1,6 @@
 from datetime import datetime
 import discord
-from bungie import activity_images
+from bungie import activity_images, commendation_defs
 from constants import DUNGEONS, RAIDS, SHERPA_THRESHOLD
 
 def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
@@ -95,6 +95,30 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     if image_url:
         embed.set_image(url=image_url)
     return embed
+
+def build_commendation_embed(
+    member: discord.Member, received: dict[str, int], given: int
+) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"🏆 Похвали {member.display_name}",
+        color=discord.Color.gold(),
+    )
+    embed.set_thumbnail(url=member.display_avatar.url)
+
+    total = sum(received.values())
+    if received:
+        lines = [
+            f"{comm['emoji']} **{comm['name_uk']}**: {received[comm['name_uk']]}"
+            for comm in commendation_defs
+            if received.get(comm["name_uk"], 0) > 0
+        ]
+        embed.add_field(name="Отримані похвали", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="Отримані похвали", value="Похвал ще немає", inline=False)
+
+    embed.set_footer(text=f"Всього отримано: {total}  •  Роздано: {given}")
+    return embed
+
 
 def build_profile_embed(bungie_name: str, completions: dict[str, int]) -> discord.Embed:
     embed = discord.Embed(

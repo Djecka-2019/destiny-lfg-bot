@@ -2,8 +2,8 @@ import discord
 from discord import app_commands
 from bungie import get_activity_completions, search_bungie_player
 from constants import DUNGEONS, RAIDS
-from database import add_ping_role, get_discord_profile, get_ping_roles, remove_ping_role, save_profile
-from embeds import build_profile_embed, build_lfg_embed
+from database import add_ping_role, get_commendation_stats, get_commendations_given_count, get_discord_profile, get_ping_roles, remove_ping_role, save_profile
+from embeds import build_commendation_embed, build_profile_embed, build_lfg_embed
 from views import ActivitySelectView
 
 ping_group = app_commands.Group(
@@ -101,7 +101,8 @@ def setup_commands(bot) -> None:
             name="📊 Профіль та статистика",
             value=(
                 "`/додати-аккаунт` — Прив'язати Bungie Name до вашого Discord.\n"
-                "`/профіль` — Переглянути вашу статистику.\n"
+                "`/профіль` — Переглянути вашу статистику проходжень.\n"
+                "`/похвали` — Переглянути отримані похвали (своїх або іншого гравця).\n"
                 "Статистика (кількість проходжень / шерпи) автоматично відображається "
                 "біля вашого ніка в списку учасників збору."
             ),
@@ -213,5 +214,17 @@ def setup_commands(bot) -> None:
 
         completions = await get_activity_completions(membership_type, membership_id)
         await interaction.followup.send(embed=build_profile_embed(bname, completions))
+
+    @bot.tree.command(name="похвали", description="Переглянути статистику похвал гравця")
+    @app_commands.describe(гравець="Discord користувач (необов'язково, за замовчуванням — ви)")
+    async def show_commendations(
+        interaction: discord.Interaction,
+        гравець: discord.Member | None = None,
+    ) -> None:
+        await interaction.response.defer()
+        target = гравець or interaction.user
+        received = await get_commendation_stats(str(target.id))
+        given = await get_commendations_given_count(str(target.id))
+        await interaction.followup.send(embed=build_commendation_embed(target, received, given))
 
     bot.tree.add_command(ping_group)

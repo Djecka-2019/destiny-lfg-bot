@@ -4,7 +4,7 @@ import logging
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from bungie import fetch_activity_images
+from bungie import fetch_activity_images, fetch_commendation_defs
 from commands import setup_commands
 from database import init_db, lfg_sessions, load_sessions_from_db
 from tasks import reminder_task, setup_tasks
@@ -36,6 +36,7 @@ class DestinyBot(commands.Bot):
         for session in lfg_sessions.values():
             self.add_view(LFGView(session))
         await fetch_activity_images()
+        await fetch_commendation_defs()
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
             self.tree.copy_global_to(guild=guild)

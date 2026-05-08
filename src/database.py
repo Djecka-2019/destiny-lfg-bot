@@ -61,6 +61,16 @@ async def init_db() -> None:
                 ping_roles TEXT NOT NULL DEFAULT '[]'
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS commendations (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id   TEXT NOT NULL,
+                from_id      TEXT NOT NULL,
+                to_id        TEXT NOT NULL,
+                commendation TEXT NOT NULL,
+                given_at     TEXT NOT NULL
+            )
+        """)
         await db.commit()
 
 async def load_sessions_from_db() -> None:
@@ -195,6 +205,36 @@ async def remove_ping_role(guild_id: str, role_id: str) -> bool:
         )
         await db.commit()
     return True
+
+async def save_commendation(session_id: str, from_id: str, to_id: str, commendation: str) -> None:
+    from datetime import datetime, timezone
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute(
+            "INSERT INTO commendations (session_id, from_id, to_id, commendation, given_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, from_id, to_id, commendation, datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+
+
+async def get_commendation_stats(discord_id: str) -> dict[str, int]:
+    async with aiosqlite.connect(DB_FILE) as db:
+        async with db.execute(
+            "SELECT commendation, COUNT(*) FROM commendations WHERE to_id = ? GROUP BY commendation",
+            (discord_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+async def get_commendations_given_count(discord_id: str) -> int:
+    async with aiosqlite.connect(DB_FILE) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM commendations WHERE from_id = ?",
+            (discord_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    return row[0] if row else 0
+
 
 async def get_discord_profile(discord_id: str) -> tuple[int, str, str] | None:
     async with aiosqlite.connect(DB_FILE) as db:

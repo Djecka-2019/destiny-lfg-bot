@@ -7,6 +7,16 @@ logger = logging.getLogger("destiny_bot")
 activity_images: dict[str, str] = {}
 activity_hashes: dict[str, set[int]] = {}
 
+commendation_defs: list[dict] = [
+    {"name_uk": "Обізнаний",          "emoji": "🔵", "color": (66, 133, 244),  "icon_url": None},
+    {"name_uk": "Самовідданий",        "emoji": "🟠", "color": (255, 127, 0),   "icon_url": None},
+    {"name_uk": "Душа компанії",       "emoji": "🌟", "color": (255, 185, 0),   "icon_url": None},
+    {"name_uk": "Найкраще вдягнений",  "emoji": "🌸", "color": (220, 150, 220), "icon_url": None},
+    {"name_uk": "Надійний",            "emoji": "🟢", "color": (52, 168, 83),   "icon_url": None},
+]
+
+_COMMENDATION_EN_NAMES = ["Knowledgeable", "Selfless", "Bring the Fun", "Best Dressed", "Reliable"]
+
 async def fetch_activity_images() -> None:
     api_key = os.getenv("BUNGIE_API_KEY")
     if not api_key:
@@ -178,6 +188,59 @@ async def get_activity_stats(membership_type: int, membership_id: str, activity_
                                 total_completions += int(val)
             except Exception: continue
     return total_completions, total_sherpas
+
+async def fetch_commendation_defs() -> None:
+    api_key = os.getenv("BUNGIE_API_KEY")
+    if not api_key:
+        logger.warning("BUNGIE_API_KEY не задано — іконки похвал вимкнено")
+        return
+
+    headers = {"X-API-Key": api_key}
+    timeout = aiohttp.ClientTimeout(total=30)
+
+    async with aiohttp.ClientSession(timeout=timeout) as http:
+        try:
+            async with http.get(f"{BUNGIE_BASE}/Platform/Destiny2/Manifest/", headers=headers) as resp:
+                if resp.status != 200:
+                    logger.warning(f"Bungie Manifest HTTP {resp.status} (для похвал)")
+                    return
+                manifest = await resp.json()
+        except Exception as e:
+            logger.error(f"Не вдалося отримати маніфест Bungie для похвал: {e}")
+            return
+
+        try:
+            def_path = manifest["Response"]["jsonWorldComponentContentPaths"]["en"]["DestinyCommendationDefinition"]
+        except KeyError:
+            logger.warning("DestinyCommendationDefinition не знайдено в маніфесті — іконки недоступні")
+            return
+
+        try:
+            async with http.get(f"{BUNGIE_BASE}{def_path}") as resp:
+                if resp.status != 200:
+                    logger.warning(f"DestinyCommendationDefinition HTTP {resp.status}")
+                    return
+                raw = await resp.json(content_type=None)
+        except Exception as e:
+            logger.error(f"Не вдалося завантажити DestinyCommendationDefinition: {e}")
+            return
+
+    en_to_icon: dict[str, str] = {}
+    for entry in raw.values():
+        name = entry.get("displayProperties", {}).get("name", "").strip()
+        icon = entry.get("displayProperties", {}).get("icon", "").strip()
+        if name and icon:
+            en_to_icon[name] = f"{BUNGIE_BASE}{icon}"
+
+    found = 0
+    for i, en_name in enumerate(_COMMENDATION_EN_NAMES):
+        icon_url = en_to_icon.get(en_name)
+        if icon_url:
+            commendation_defs[i]["icon_url"] = icon_url
+            found += 1
+
+    logger.info(f"Іконки похвал: {found}/{len(_COMMENDATION_EN_NAMES)} знайдено")
+
 
 async def get_activity_completions(membership_type: int, membership_id: str) -> dict[str, int]:
     api_key = os.getenv("BUNGIE_API_KEY")
