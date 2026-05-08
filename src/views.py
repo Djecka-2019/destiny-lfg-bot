@@ -2,7 +2,7 @@ import logging
 import re
 from datetime import date as date_type, datetime, timedelta
 import discord
-from bungie import commendation_defs, get_activity_completions, get_activity_stats, search_bungie_player_by_name
+from bungie import commendation_defs, get_activity_completions, get_activity_stats, get_character_emblem, search_bungie_player_by_name
 from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON
 from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, save_commendation, upsert_session
 from embeds import build_lfg_embed
@@ -32,11 +32,13 @@ class _CommendationSkip(discord.ui.Button):
 
 
 class CommendationWizardView(discord.ui.View):
-    def __init__(self, teammates: list[str], activity: str, session_id: str) -> None:
+    def __init__(self, teammates: list[str], activity: str, session_id: str,
+                 emblem_cache: dict[str, dict | None] | None = None) -> None:
         super().__init__(timeout=300)
         self._teammates = teammates
         self._activity = activity
         self._session_id = session_id
+        self._emblem_cache: dict[str, dict | None] = emblem_cache or {}
         self._current = 0
         self._commendations: dict[str, int] = {}
         for i, comm in enumerate(commendation_defs):
@@ -52,6 +54,12 @@ class CommendationWizardView(discord.ui.View):
             description=f"Оберіть похвалу для <@{teammate_id}>\n({idx} з {total})",
             color=discord.Color.gold(),
         )
+        emblem = self._emblem_cache.get(teammate_id)
+        if emblem:
+            if emblem.get("icon"):
+                embed.set_thumbnail(url=emblem["icon"])
+            if emblem.get("background"):
+                embed.set_image(url=emblem["background"])
         return embed
 
     def _build_summary_embed(self) -> discord.Embed:
@@ -287,12 +295,19 @@ class LFGView(discord.ui.View):
 
         activity = session["activity"]
         bot = interaction.client
+
+        emblem_cache: dict[str, dict | None] = {}
+        for mid in all_members:
+            profile = await get_discord_profile(mid)
+            if profile:
+                emblem_cache[mid] = await get_character_emblem(profile[0], profile[1])
+
         sent, blocked = 0, 0
         for member_id in all_members:
             teammates = [m for m in all_members if m != member_id]
             try:
                 user = await bot.fetch_user(int(member_id))
-                view = CommendationWizardView(teammates, activity, msg_id)
+                view = CommendationWizardView(teammates, activity, msg_id, emblem_cache)
                 await user.send(embed=view.build_step_embed(), view=view)
                 sent += 1
             except discord.Forbidden:

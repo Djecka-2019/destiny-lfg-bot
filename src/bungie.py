@@ -150,6 +150,36 @@ async def search_bungie_player_by_name(name: str) -> dict | None:
         "bungie_name":     p.get("bungieGlobalDisplayName", name),
     }
 
+async def get_character_emblem(membership_type: int, membership_id: str) -> dict[str, str] | None:
+    api_key = os.getenv("BUNGIE_API_KEY")
+    if not api_key:
+        return None
+    headers = {"X-API-Key": api_key}
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as http:
+        try:
+            async with http.get(
+                f"{BUNGIE_BASE}/Platform/Destiny2/{membership_type}/Profile/{membership_id}/?components=200",
+                headers=headers,
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+        except Exception:
+            return None
+    characters = data.get("Response", {}).get("characters", {}).get("data", {})
+    if not characters:
+        return None
+    latest = max(characters.values(), key=lambda c: c.get("dateLastPlayed", ""))
+    icon = latest.get("emblemPath", "")
+    background = latest.get("emblemBackgroundPath", "")
+    if not icon and not background:
+        return None
+    return {
+        "icon":       f"{BUNGIE_BASE}{icon}"       if icon       else None,
+        "background": f"{BUNGIE_BASE}{background}" if background else None,
+    }
+
+
 async def get_activity_stats(membership_type: int, membership_id: str, activity_name: str) -> tuple[int, int]:
     api_key = os.getenv("BUNGIE_API_KEY")
     if not api_key or not activity_hashes or activity_name not in activity_hashes:

@@ -97,13 +97,19 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     return embed
 
 def build_commendation_embed(
-    member: discord.Member, received: dict[str, int], given: int
+    member: discord.Member, received: dict[str, int], given: int,
+    emblem: dict | None = None,
 ) -> discord.Embed:
     embed = discord.Embed(
         title=f"🏆 Похвали {member.display_name}",
         color=discord.Color.gold(),
     )
-    embed.set_thumbnail(url=member.display_avatar.url)
+    if emblem and emblem.get("icon"):
+        embed.set_thumbnail(url=emblem["icon"])
+    else:
+        embed.set_thumbnail(url=member.display_avatar.url)
+    if emblem and emblem.get("background"):
+        embed.set_image(url=emblem["background"])
 
     total = sum(received.values())
     if received:

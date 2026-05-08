@@ -1,6 +1,6 @@
 import discord
 from discord import app_commands
-from bungie import get_activity_completions, search_bungie_player
+from bungie import get_activity_completions, get_character_emblem, search_bungie_player
 from constants import DUNGEONS, RAIDS
 from database import add_ping_role, get_commendation_stats, get_commendations_given_count, get_discord_profile, get_ping_roles, remove_ping_role, save_profile
 from embeds import build_commendation_embed, build_profile_embed, build_lfg_embed
@@ -225,6 +225,10 @@ def setup_commands(bot) -> None:
         target = гравець or interaction.user
         received = await get_commendation_stats(str(target.id))
         given = await get_commendations_given_count(str(target.id))
-        await interaction.followup.send(embed=build_commendation_embed(target, received, given))
+        emblem = None
+        profile = await get_discord_profile(str(target.id))
+        if profile:
+            emblem = await get_character_emblem(profile[0], profile[1])
+        await interaction.followup.send(embed=build_commendation_embed(target, received, given, emblem))
 
     bot.tree.add_command(ping_group)
