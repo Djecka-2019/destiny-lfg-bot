@@ -15,7 +15,7 @@ commendation_defs: list[dict] = [
     {"name_uk": "Надійний",            "emoji": "🟢", "color": (52, 168, 83),   "icon_url": None},
 ]
 
-_COMMENDATION_EN_NAMES = ["Knowledgeable", "Selfless", "Bring the Fun", "Best Dressed", "Reliable"]
+_COMMENDATION_EN_NAMES = ["Knowledgeable", "Selfless", "Joy Bringer", "Best Dressed", "Thoughtful"]
 
 async def fetch_activity_images() -> None:
     api_key = os.getenv("BUNGIE_API_KEY")
@@ -263,7 +263,7 @@ async def fetch_commendation_defs() -> None:
         if name and icon:
             en_to_icon[name] = f"{BUNGIE_BASE}{icon}"
 
-    logger.info(f"Доступні назви похвал у маніфесті: {sorted(en_to_icon)}")
+    logger.debug(f"Доступні назви похвал у маніфесті: {sorted(en_to_icon)}")
 
     found = 0
     for i, en_name in enumerate(_COMMENDATION_EN_NAMES):
