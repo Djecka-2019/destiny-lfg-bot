@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import date as date_type, datetime, timedelta
 import discord
 from bungie import get_activity_completions, get_activity_stats, search_bungie_player_by_name
 from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON
@@ -221,7 +221,10 @@ class ActivitySelect(discord.ui.Select):
                     view=view,
                 )
                 return
-        await interaction.response.send_modal(LFGModal(selected_activities, self._activity_type))
+        await interaction.response.edit_message(
+            content="📅 **Оберіть дату збору:**",
+            view=DateView(selected_activities, self._activity_type, mention=None),
+        )
 
 class ActivitySelectView(discord.ui.View):
     def __init__(self, activities: list[str], activity_type: str) -> None:
@@ -273,8 +276,9 @@ class PingRoleSelect(discord.ui.Select):
         super().__init__(placeholder="Оберіть роль для пінгу...", options=options)
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_modal(
-            LFGModal(self._activities, self._activity_type, mention=self.values[0])
+        await interaction.response.edit_message(
+            content="📅 **Оберіть дату збору:**",
+            view=DateView(self._activities, self._activity_type, mention=self.values[0]),
         )
 
 class PingRoleView(discord.ui.View):
@@ -286,9 +290,75 @@ class PingRoleView(discord.ui.View):
 
     @discord.ui.button(label="Без пінгу", style=discord.ButtonStyle.secondary, emoji="🔕")
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        await interaction.response.send_modal(
-            LFGModal(self._activities, self._activity_type, mention=None)
+        await interaction.response.edit_message(
+            content="📅 **Оберіть дату збору:**",
+            view=DateView(self._activities, self._activity_type, mention=None),
         )
+
+_DAYS_UA = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+_MONTHS_UA = ["січ.", "лют.", "бер.", "квіт.", "трав.", "черв.", "лип.", "серп.", "вер.", "жовт.", "лист.", "груд."]
+
+def _date_label(d: date_type, offset: int) -> str:
+    m = _MONTHS_UA[d.month - 1]
+    if offset == 0:
+        return f"Сьогодні, {d.day} {m}"
+    if offset == 1:
+        return f"Завтра, {d.day} {m}"
+    return f"{_DAYS_UA[d.weekday()]}, {d.day} {m}"
+
+
+class DateButton(discord.ui.Button):
+    def __init__(self, activities: list[str], activity_type: str, mention: str | None,
+                 date_iso: str, label: str, primary: bool) -> None:
+        super().__init__(
+            label=label,
+            style=discord.ButtonStyle.primary if primary else discord.ButtonStyle.secondary,
+        )
+        self._activities = activities
+        self._activity_type = activity_type
+        self._mention = mention
+        self._date_iso = date_iso
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(
+            LFGModal(self._activities, self._activity_type, self._mention, self._date_iso)
+        )
+
+
+class DateFutureSelect(discord.ui.Select):
+    def __init__(self, activities: list[str], activity_type: str, mention: str | None) -> None:
+        self._activities = activities
+        self._activity_type = activity_type
+        self._mention = mention
+
+        now = datetime.now(TZ_KYIV)
+        options = [
+            discord.SelectOption(
+                label=_date_label((now + timedelta(days=i)).date(), i),
+                value=(now + timedelta(days=i)).date().isoformat(),
+            )
+            for i in range(2, 9)
+        ]
+        super().__init__(placeholder="Інша дата...", options=options)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(
+            LFGModal(self._activities, self._activity_type, self._mention, self.values[0])
+        )
+
+
+class DateView(discord.ui.View):
+    def __init__(self, activities: list[str], activity_type: str, mention: str | None) -> None:
+        super().__init__(timeout=120)
+        now = datetime.now(TZ_KYIV)
+        today = now.date()
+        tomorrow = (now + timedelta(days=1)).date()
+        self.add_item(DateButton(activities, activity_type, mention, today.isoformat(),
+                                 _date_label(today, 0), primary=True))
+        self.add_item(DateButton(activities, activity_type, mention, tomorrow.isoformat(),
+                                 _date_label(tomorrow, 1), primary=False))
+        self.add_item(DateFutureSelect(activities, activity_type, mention))
+
 
 class LFGModal(discord.ui.Modal, title="Налаштування збору"):
     time_input = discord.ui.TextInput(
@@ -306,11 +376,13 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         max_length=500,
     )
 
-    def __init__(self, activities: list[str], activity_type: str, mention: str | None = None) -> None:
+    def __init__(self, activities: list[str], activity_type: str,
+                 mention: str | None = None, date_iso: str | None = None) -> None:
         super().__init__()
         self._activities = activities
         self._activity_type = activity_type
         self._mention = mention
+        self._date_iso = date_iso
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         time_str = self.time_input.value.strip()
@@ -333,12 +405,24 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         leader_id = str(interaction.user.id)
         description = self.description_input.value.strip()
         now = datetime.now(TZ_KYIV)
-        scheduled = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        if scheduled <= now:
-            scheduled += timedelta(days=1)
+
+        if self._date_iso:
+            selected_date = date_type.fromisoformat(self._date_iso)
+            scheduled = now.replace(year=selected_date.year, month=selected_date.month,
+                                    day=selected_date.day, hour=h, minute=m, second=0, microsecond=0)
+            if scheduled <= now:
+                await interaction.response.send_message(
+                    "❌ Вказаний час вже минув. Оберіть пізніший час або іншу дату.",
+                    ephemeral=True,
+                )
+                return
+        else:
+            scheduled = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if scheduled <= now:
+                scheduled += timedelta(days=1)
 
         ts = int(scheduled.timestamp())
-        display_time = f"<t:{ts}:t>"
+        display_time = f"<t:{ts}:f>" if scheduled.date() != now.date() else f"<t:{ts}:t>"
         options = []
         if len(self._activities) > 1:
             activity_name = "Голосування за активність"
@@ -381,7 +465,8 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         message = await interaction.original_response()
         activity_label = "Рейд" if self._activity_type == "raid" else "Данж"
         try:
-            thread_name = f"[{activity_label}] {activity_name} о {time_str}"
+            date_label = f" {scheduled.strftime('%d.%m')}" if scheduled.date() != now.date() else ""
+            thread_name = f"[{activity_label}] {activity_name} о {time_str}{date_label}"
             if len(thread_name) > 100: thread_name = thread_name[:97] + "..."
             thread = await message.create_thread(
                 name=thread_name,
