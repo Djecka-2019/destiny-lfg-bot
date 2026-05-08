@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from bungie import fetch_activity_images, fetch_commendation_defs
 from commands import setup_commands
 from database import init_db, lfg_sessions, load_sessions_from_db
+from oauth import start_oauth_server
 from tasks import reminder_task, setup_tasks
 from views import LFGView
 
@@ -37,6 +38,7 @@ class DestinyBot(commands.Bot):
             self.add_view(LFGView(session))
         await fetch_activity_images()
         await fetch_commendation_defs()
+        await start_oauth_server(self)
         synced = await self.tree.sync()
         logger.info(f"Синхронізовано {len(synced)} команд(и) глобально. Завантажено сесій: {len(lfg_sessions)}")
         if GUILD_ID:

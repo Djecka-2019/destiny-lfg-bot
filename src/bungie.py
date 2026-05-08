@@ -272,6 +272,74 @@ async def fetch_commendation_defs() -> None:
     logger.info(f"Іконки похвал: {found}/{len(_COMMENDATION_EN_NAMES)} знайдено")
 
 
+async def exchange_code(code: str) -> dict | None:
+    client_id = os.getenv("BUNGIE_CLIENT_ID")
+    client_secret = os.getenv("BUNGIE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        logger.error("BUNGIE_CLIENT_ID або BUNGIE_CLIENT_SECRET не задано")
+        return None
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as http:
+        try:
+            async with http.post(
+                f"{BUNGIE_BASE}/platform/app/oauth/token/",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            ) as resp:
+                if resp.status != 200:
+                    logger.error(f"OAuth token exchange HTTP {resp.status}: {await resp.text()}")
+                    return None
+                return await resp.json()
+        except Exception as e:
+            logger.error(f"Помилка при обміні OAuth коду: {e}")
+            return None
+
+
+async def get_bungie_memberships(access_token: str) -> dict | None:
+    api_key = os.getenv("BUNGIE_API_KEY")
+    if not api_key:
+        return None
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as http:
+        try:
+            async with http.get(
+                f"{BUNGIE_BASE}/Platform/User/GetMembershipsForCurrentUser/",
+                headers={
+                    "X-API-Key": api_key,
+                    "Authorization": f"Bearer {access_token}",
+                },
+            ) as resp:
+                if resp.status != 200:
+                    logger.error(f"GetMembershipsForCurrentUser HTTP {resp.status}")
+                    return None
+                data = await resp.json()
+        except Exception as e:
+            logger.error(f"Помилка при отриманні memberships: {e}")
+            return None
+
+    response = data.get("Response", {})
+    memberships = response.get("destinyMemberships", [])
+    if not memberships:
+        return None
+
+    primary_id = response.get("primaryMembershipId")
+    membership = next((m for m in memberships if m["membershipId"] == primary_id), memberships[0])
+
+    bungie_net_user = response.get("bungieNetUser", {})
+    name = bungie_net_user.get("cachedBungieGlobalDisplayName", "")
+    code = bungie_net_user.get("cachedBungieGlobalDisplayNameCode", 0)
+    bungie_name = f"{name}#{code:04d}" if name else membership.get("displayName", "Unknown")
+
+    return {
+        "membership_type": membership["membershipType"],
+        "membership_id":   membership["membershipId"],
+        "bungie_name":     bungie_name,
+    }
+
+
 async def get_activity_completions(membership_type: int, membership_id: str) -> dict[str, int]:
     api_key = os.getenv("BUNGIE_API_KEY")
     if not api_key or not activity_hashes:

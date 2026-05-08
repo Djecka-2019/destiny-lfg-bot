@@ -71,6 +71,13 @@ async def init_db() -> None:
                 given_at     TEXT NOT NULL
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS oauth_states (
+                state       TEXT PRIMARY KEY,
+                discord_id  TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            )
+        """)
         await db.commit()
 
 async def load_sessions_from_db() -> None:
@@ -234,6 +241,28 @@ async def get_commendations_given_count(discord_id: str) -> int:
         ) as cursor:
             row = await cursor.fetchone()
     return row[0] if row else 0
+
+
+async def save_oauth_state(state: str, discord_id: str) -> None:
+    from datetime import datetime, timezone
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO oauth_states (state, discord_id, created_at) VALUES (?, ?, ?)",
+            (state, discord_id, datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+
+
+async def get_and_delete_oauth_state(state: str) -> str | None:
+    async with aiosqlite.connect(DB_FILE) as db:
+        async with db.execute(
+            "SELECT discord_id FROM oauth_states WHERE state = ?", (state,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row:
+            await db.execute("DELETE FROM oauth_states WHERE state = ?", (state,))
+            await db.commit()
+    return row[0] if row else None
 
 
 async def get_discord_profile(discord_id: str) -> tuple[int, str, str] | None:

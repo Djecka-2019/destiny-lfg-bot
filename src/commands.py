@@ -4,7 +4,14 @@ from bungie import get_activity_completions, get_character_emblem, search_bungie
 from constants import DUNGEONS, RAIDS
 from database import add_ping_role, get_commendation_stats, get_commendations_given_count, get_discord_profile, get_ping_roles, remove_ping_role, save_profile
 from embeds import build_commendation_embed, build_profile_embed, build_lfg_embed
+from oauth import generate_auth_link
 from views import ActivitySelectView
+
+class _OAuthLinkView(discord.ui.View):
+    def __init__(self, url: str) -> None:
+        super().__init__()
+        self.add_item(discord.ui.Button(label="Авторизуватись через Bungie", url=url, style=discord.ButtonStyle.link))
+
 
 ping_group = app_commands.Group(
     name="пінг-ролі",
@@ -136,30 +143,13 @@ def setup_commands(bot) -> None:
             "🗡️ **Оберіть данж для збору:**", view=view, ephemeral=True
         )
 
-    @bot.tree.command(name="додати-аккаунт", description="Прив'яжіть ваш акаунт Bungie до Discord")
-    @app_commands.describe(bungie_name="Ваш Bungie name у форматі Ім'я#1234")
-    async def link_account(interaction: discord.Interaction, bungie_name: str) -> None:
-        await interaction.response.defer(ephemeral=True)
-        parsed = _parse_bungie_name(bungie_name)
-        if not parsed:
-            await interaction.followup.send("❌ Формат: `Ім'я#1234`", ephemeral=True)
-            return
-        player = await search_bungie_player(*parsed)
-        if not player:
-            await interaction.followup.send(
-                f"❌ Гравця `{bungie_name}` не знайдено на Bungie.\n"
-                "Перевірте ім'я та код (приклад: `Guardian#1234`)",
-                ephemeral=True,
-            )
-            return
-        await save_profile(
-            str(interaction.user.id),
-            player["membership_type"],
-            player["membership_id"],
-            player["bungie_name"],
-        )
-        await interaction.followup.send(
-            f"✅ Акаунт **{player['bungie_name']}** прив'язано до вашого Discord!",
+    @bot.tree.command(name="додати-аккаунт", description="Прив'яжіть ваш акаунт Bungie до Discord через OAuth")
+    async def link_account(interaction: discord.Interaction) -> None:
+        url = await generate_auth_link(str(interaction.user.id))
+        await interaction.response.send_message(
+            f"🔗 Натисніть кнопку нижче, щоб авторизуватися через Bungie.\n"
+            f"Після авторизації акаунт буде автоматично прив'язано до вашого Discord.",
+            view=_OAuthLinkView(url),
             ephemeral=True,
         )
 
