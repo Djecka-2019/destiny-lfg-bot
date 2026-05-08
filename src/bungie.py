@@ -263,12 +263,16 @@ async def fetch_commendation_defs() -> None:
         if name and icon:
             en_to_icon[name] = f"{BUNGIE_BASE}{icon}"
 
+    logger.debug(f"Доступні назви похвал у маніфесті: {sorted(en_to_icon)}")
+
     found = 0
     for i, en_name in enumerate(_COMMENDATION_EN_NAMES):
         icon_url = en_to_icon.get(en_name)
         if icon_url:
             commendation_defs[i]["icon_url"] = icon_url
             found += 1
+        else:
+            logger.warning(f"Похвала не знайдена в маніфесті: '{en_name}'")
 
     logger.info(f"Іконки похвал: {found}/{len(_COMMENDATION_EN_NAMES)} знайдено")
 
