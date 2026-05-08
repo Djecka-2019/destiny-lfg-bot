@@ -33,6 +33,24 @@ class DestinyBot(commands.Bot):
     async def setup_hook(self) -> None:
         await init_db()
         await load_sessions_from_db()
+        
+        @self.tree.error
+        async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+            if isinstance(error, discord.app_commands.MissingPermissions):
+                await interaction.response.send_message(
+                    f"❌ У вас недостатньо прав для цієї команди. Потрібно: `{', '.join(error.missing_permissions)}`",
+                    ephemeral=True
+                )
+            elif isinstance(error, discord.app_commands.BotMissingPermissions):
+                await interaction.response.send_message(
+                    f"❌ У бота недостатньо прав для цієї команди. Потрібно: `{', '.join(error.missing_permissions)}`",
+                    ephemeral=True
+                )
+            else:
+                logger.error(f"App Command Error: {error}", exc_info=error)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ Виникла неочікувана помилка при виконанні команди.", ephemeral=True)
+
         self.add_view(LFGView())
         for session in lfg_sessions.values():
             self.add_view(LFGView(session))

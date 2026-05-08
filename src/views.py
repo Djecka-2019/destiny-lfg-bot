@@ -252,11 +252,61 @@ class LFGView(discord.ui.View):
         reserves: list = session.setdefault("reserves", [])
 
         promoted_id: str | None = None
+        new_leader_id: str | None = None
 
         if user_id in members:
             members.remove(user_id)
             joined = False
-            if reserves:
+
+            # Leader left
+            if user_id == session["leader_id"]:
+                if members:
+                    new_leader_id = members[0]
+                elif reserves:
+                    new_leader_id = reserves.pop(0)
+                    members.append(new_leader_id)
+                    await self._update_member_stats(interaction, session, new_leader_id)
+                
+                if new_leader_id:
+                    session["leader_id"] = new_leader_id
+                    new_leader = interaction.guild.get_member(int(new_leader_id))
+                    if not new_leader:
+                        try:
+                            new_leader = await interaction.guild.fetch_member(int(new_leader_id))
+                        except:
+                            new_leader = None
+                    
+                    session["leader_name"] = new_leader.display_name if new_leader else f"User {new_leader_id}"
+                    
+                    profile = await get_discord_profile(new_leader_id)
+                    session["leader_bungie_name"] = profile[2] if profile else None
+                else:
+                    # No one left to lead, close LFG
+                    for item in self.children:
+                        item.disabled = True
+                    await interaction.edit_original_response(embed=build_lfg_embed(session, closed=True), view=self)
+                    
+                    thread_id = session.get("thread_id")
+                    if thread_id:
+                        thread = interaction.guild.get_thread(int(thread_id))
+                        if not thread:
+                            try:
+                                thread = await interaction.client.fetch_channel(int(thread_id))
+                            except:
+                                thread = None
+                        if thread:
+                            await thread.send("🔒 **Збір автоматично закрито: учасників не залишилося.**")
+                            try:
+                                await thread.edit(archived=True, locked=True)
+                            except:
+                                pass
+                    
+                    del lfg_sessions[msg_id]
+                    await delete_session(msg_id)
+                    return
+
+            elif reserves and len(members) < session["capacity"]:
+                # Normal member left and we have reserves
                 promoted_id = reserves.pop(0)
                 members.append(promoted_id)
                 await self._update_member_stats(interaction, session, promoted_id)
@@ -279,6 +329,11 @@ class LFGView(discord.ui.View):
         thread_id = session.get("thread_id")
         if thread_id:
             thread = interaction.guild.get_thread(int(thread_id))
+            if not thread:
+                try:
+                    thread = await interaction.client.fetch_channel(int(thread_id))
+                except (discord.NotFound, discord.HTTPException):
+                    thread = None
             if thread:
                 if joined is True:
                     await thread.send(
@@ -335,6 +390,11 @@ class LFGView(discord.ui.View):
         thread_id = session.get("thread_id")
         if thread_id:
             thread = interaction.guild.get_thread(int(thread_id))
+            if not thread:
+                try:
+                    thread = await interaction.client.fetch_channel(int(thread_id))
+                except (discord.NotFound, discord.HTTPException):
+                    thread = None
             if thread:
                 await thread.send("🔒 **Збір закрито організатором.**")
                 try:
@@ -471,8 +531,13 @@ class VoteSelect(discord.ui.Select):
         votes[user_id] = self.values[0]
         await upsert_session(self._msg_id, session)
         try:
-            msg = await interaction.channel.fetch_message(int(self._msg_id))
-            await msg.edit(embed=build_lfg_embed(session))
+            channel_id = session.get("channel_id")
+            if channel_id:
+                channel = interaction.client.get_channel(int(channel_id))
+                if not channel:
+                    channel = await interaction.client.fetch_channel(int(channel_id))
+                msg = await channel.fetch_message(int(self._msg_id))
+                await msg.edit(embed=build_lfg_embed(session))
         except Exception:
             pass
         await interaction.response.send_message(f"✅ Ваш голос за **{self.values[0]}** прийнято!", ephemeral=True)
