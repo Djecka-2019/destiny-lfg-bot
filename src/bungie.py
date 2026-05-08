@@ -219,6 +219,7 @@ async def get_activity_stats(membership_type: int, membership_id: str, activity_
             except Exception: continue
     return total_completions, total_sherpas
 
+
 async def fetch_commendation_defs() -> None:
     api_key = os.getenv("BUNGIE_API_KEY")
     if not api_key:
@@ -240,19 +241,19 @@ async def fetch_commendation_defs() -> None:
             return
 
         try:
-            def_path = manifest["Response"]["jsonWorldComponentContentPaths"]["en"]["DestinyCommendationDefinition"]
+            def_path = manifest["Response"]["jsonWorldComponentContentPaths"]["en"]["DestinySocialCommendationDefinition"]
         except KeyError:
-            logger.warning("DestinyCommendationDefinition не знайдено в маніфесті — іконки недоступні")
+            logger.warning("DestinySocialCommendationDefinition не знайдено в маніфесті — іконки недоступні")
             return
 
         try:
             async with http.get(f"{BUNGIE_BASE}{def_path}") as resp:
                 if resp.status != 200:
-                    logger.warning(f"DestinyCommendationDefinition HTTP {resp.status}")
+                    logger.warning(f"DestinySocialCommendationDefinition HTTP {resp.status}")
                     return
                 raw = await resp.json(content_type=None)
         except Exception as e:
-            logger.error(f"Не вдалося завантажити DestinyCommendationDefinition: {e}")
+            logger.error(f"Не вдалося завантажити DestinySocialCommendationDefinition: {e}")
             return
 
     en_to_icon: dict[str, str] = {}
