@@ -49,6 +49,14 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     if description:
         embed.add_field(name="📝 Опис / вимоги", value=description, inline=False)
 
+    leader_bungie_name = session.get("leader_bungie_name")
+    if leader_bungie_name and not closed:
+        embed.add_field(
+            name="🎮 Команда для входу",
+            value=f"`/join {leader_bungie_name}`",
+            inline=False,
+        )
+
     if options:
         tally = {opt: 0 for opt in options}
         for v in votes.values():

@@ -430,25 +430,29 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         else:
             activity_name = self._activities[0]
 
+        leader_profile = await get_discord_profile(leader_id)
+        leader_bungie_name = leader_profile[2] if leader_profile else None
+
         session: dict = {
-            "activity":      activity_name,
-            "activity_type": self._activity_type,
-            "time":          time_str,
-            "description":   description,
-            "leader_id":     leader_id,
-            "leader_name":   interaction.user.display_name,
-            "members":       [leader_id],
-            "reserves":      [],
-            "capacity":      capacity,
-            "thread_id":     None,
-            "guild_id":      str(interaction.guild_id),
-            "channel_id":    str(interaction.channel_id),
-            "scheduled_at":  scheduled.isoformat(),
-            "reminder_sent": False,
-            "options":       options,
-            "votes":         {},
-            "member_data":   {},
-            "mention":       self._mention,
+            "activity":           activity_name,
+            "activity_type":      self._activity_type,
+            "time":               time_str,
+            "description":        description,
+            "leader_id":          leader_id,
+            "leader_name":        interaction.user.display_name,
+            "leader_bungie_name": leader_bungie_name,
+            "members":            [leader_id],
+            "reserves":           [],
+            "capacity":           capacity,
+            "thread_id":          None,
+            "guild_id":           str(interaction.guild_id),
+            "channel_id":         str(interaction.channel_id),
+            "scheduled_at":       scheduled.isoformat(),
+            "reminder_sent":      False,
+            "options":            options,
+            "votes":              {},
+            "member_data":        {},
+            "mention":            self._mention,
         }
         view = LFGView(session)
         await view._update_member_stats(interaction, session, leader_id)
