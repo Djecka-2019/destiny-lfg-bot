@@ -1,25 +1,57 @@
 # Destiny LFG Bot
 
-A Discord bot for organizing Destiny 2 raid and dungeon groups (LFG — Looking For Group). Built for Ukrainian-speaking communities.
+A Discord bot for organizing Destiny 2 raid, dungeon, and PvP groups (LFG — Looking For Group). Built for Ukrainian-speaking communities.
 
 ## Features
 
-- Create LFG posts for raids and dungeons via slash commands
+- Create LFG posts for raids, dungeons, and PvP via slash commands
 - Join/leave buttons with automatic reserve queue and promotion
 - Per-session discussion threads with join/leave announcements
 - 15-minute DM reminder before activity starts
 - Team stats: completion counts and Sherpa/newbie tags for each member
-- Player profiles linked to Bungie accounts with full raid/dungeon history
+- Player profiles linked to Bungie accounts via OAuth — full raid/dungeon history
+- Commendation system: give and track post-activity praise
+- Automatic Discord role assignment based on Bungie stats (raids, GMs, Trials, PvP rank, Gambit resets)
+- Persistent template buttons for channels (admins post once, players click anytime)
+- Ping role management for activity notifications
 - Activity images fetched from the Bungie manifest at startup
 
 ## Slash Commands
 
+### Activity organization
+
 | Command | Description |
 |---|---|
-| `/пошук-рейдів` | Create a raid LFG post |
-| `/пошук-данжів` | Create a dungeon LFG post |
-| `/додати-аккаунт` | Link your Bungie account to Discord |
-| `/профіль` | View raid/dungeon completion stats |
+| `/lfg-raid` | Create a raid LFG post (6 slots) |
+| `/lfg-dungeon` | Create a dungeon LFG post (3 slots) |
+| `/lfg-pvp` | Create a PvP LFG post (3 slots) |
+
+### Profile & stats
+
+| Command | Description |
+|---|---|
+| `/add-account` | Link your Bungie account via OAuth |
+| `/register` / `/oauth` | Aliases for `/add-account` |
+| `/profile [member] [bungie_name]` | View raid/dungeon completion stats |
+| `/commendations [member]` | View received and given commendations |
+| `/sync-roles` / `/sync` | Update your Discord roles based on Bungie stats |
+
+### Admin commands
+
+| Command | Description |
+|---|---|
+| `/template <type> [channel] [title] [description]` | Post a persistent LFG button in a channel |
+| `/register-template [channel] [title] [description]` | Post a persistent account-registration button |
+| `/ping-roles add <role>` | Allow a role to be pinged in LFG posts |
+| `/ping-roles remove <role>` | Remove a role from the ping list |
+| `/ping-roles everyone <true\|false>` | Enable or disable @everyone pings |
+| `/ping-roles list` | Show configured ping roles |
+
+### General
+
+| Command | Description |
+|---|---|
+| `/help` | Show bot capabilities and command overview |
 
 ## Setup
 
@@ -27,7 +59,7 @@ A Discord bot for organizing Destiny 2 raid and dungeon groups (LFG — Looking 
 
 - Docker and Docker Compose
 - A [Discord bot token](https://discord.com/developers/applications)
-- A [Bungie API key](https://www.bungie.net/en/Application)
+- A [Bungie API key and OAuth app](https://www.bungie.net/en/Application) (Confidential Client type, redirect URL pointing to your server's `/callback` endpoint)
 
 ### Running on a VPS
 
@@ -42,6 +74,8 @@ docker compose up -d
 ```
 
 The SQLite database persists in a Docker volume (`bot-data`) across restarts.
+
+The OAuth callback server listens on `OAUTH_PORT` (default `8080`). Set your Bungie app's redirect URL to `http://<your-server-ip>:8080/callback`.
 
 ### Updating
 
@@ -69,19 +103,42 @@ python src/bot.py
 |---|---|
 | `DISCORD_TOKEN` | Bot token from the Discord Developer Portal |
 | `BUNGIE_API_KEY` | API key from bungie.net/en/Application |
-| `GUILD_ID` | Discord server ID for instant command sync (optional) |
+| `BUNGIE_CLIENT_ID` | OAuth client ID from the Bungie application page |
+| `BUNGIE_CLIENT_SECRET` | OAuth client secret from the Bungie application page |
+| `OAUTH_PORT` | Port for the OAuth callback HTTP server (default: `8080`) |
+| `GUILD_ID` | Discord server ID for instant command sync and role assignment |
+| `REGISTERED_ROLE_ID` | Role ID to assign automatically after a user links their Bungie account |
+| `ROLE_SYNC_CONFIG` | Path to the role sync JSON config file (default: `role_sync.json`) |
+
+## Role Sync
+
+Roles are assigned automatically when a user links their account and on demand via `/sync-roles`. Configure thresholds in `role_sync.json`:
+
+```json
+{
+  "raids":     { "clears":   [{ "threshold": 100, "role_id": "..." }, ...] },
+  "strikes":   { "gms":      [{ "threshold": 50,  "role_id": "..." }, ...] },
+  "trials":    { "flawless": [{ "threshold": 10,  "role_id": "..." }, ...] },
+  "pvp_comp":  { "ranks":    [{ "threshold": 5500,"role_id": "..." }, ...] },
+  "gambit":    { "resets":   [{ "threshold": 5,   "role_id": "..." }, ...] }
+}
+```
+
+Entries are evaluated highest-threshold-first; only the best matching tier is granted per category.
 
 ## Project Structure
 
 ```
 bot.py              — Entry point: DestinyBot class, startup hooks
-constants.py        — Activity lists, thresholds, capacity limits
-database.py         — SQLite helpers: sessions and player profiles
-bungie.py           — Bungie API: manifest fetch, player search, stats
+constants.py        — Activity lists, thresholds, capacity limits, role sync config loader
+database.py         — SQLite helpers: sessions, player profiles, commendations, ping roles
+bungie.py           — Bungie API: manifest fetch, player search, stats, OAuth exchange
 embeds.py           — Discord embed builders
-views.py            — UI components: buttons, dropdowns, modal
+views.py            — UI components: buttons, dropdowns, modals, template views
 commands.py         — Slash command definitions
 tasks.py            — Background loop: 15-minute activity reminders
+oauth.py            — Bungie OAuth flow: state management, callback HTTP server, role sync on login
+role_sync.py        — Discord role assignment logic based on Bungie stats
 find_activities.py  — Diagnostic script to verify Bungie manifest matching
 ```
 
