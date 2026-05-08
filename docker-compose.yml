@@ -5,6 +5,8 @@ services:
     env_file: .env
     environment:
       - TZ=Europe/Kyiv
+    ports:
+      - "${OAUTH_PORT:-8080}:${OAUTH_PORT:-8080}"
     volumes:
       - bot-data:/app/data
 
