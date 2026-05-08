@@ -263,7 +263,7 @@ async def fetch_commendation_defs() -> None:
         if name and icon:
             en_to_icon[name] = f"{BUNGIE_BASE}{icon}"
 
-    logger.debug(f"Доступні назви похвал у маніфесті: {sorted(en_to_icon)}")
+    logger.info(f"Доступні назви похвал у маніфесті: {sorted(en_to_icon)}")
 
     found = 0
     for i, en_name in enumerate(_COMMENDATION_EN_NAMES):
