@@ -37,16 +37,13 @@ class DestinyBot(commands.Bot):
             self.add_view(LFGView(session))
         await fetch_activity_images()
         await fetch_commendation_defs()
+        synced = await self.tree.sync()
+        logger.info(f"Синхронізовано {len(synced)} команд(и) глобально. Завантажено сесій: {len(lfg_sessions)}")
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
             self.tree.copy_global_to(guild=guild)
             guild_synced = await self.tree.sync(guild=guild)
-            self.tree.clear_commands(guild=None)
-            await self.tree.sync()
-            logger.info(f"Синхронізовано {len(guild_synced)} команд(и) для сервера {GUILD_ID}. Завантажено сесій: {len(lfg_sessions)}")
-        else:
-            synced = await self.tree.sync()
-            logger.info(f"Синхронізовано {len(synced)} команд(и) глобально. Завантажено сесій: {len(lfg_sessions)}")
+            logger.info(f"Також синхронізовано {len(guild_synced)} команд(и) для сервера {GUILD_ID}")
 
     async def on_ready(self) -> None:
         logger.info(f"✅ Бот запущено: {self.user}  (ID: {self.user.id})")
