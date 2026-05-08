@@ -73,16 +73,34 @@ async def _callback(request: web.Request) -> web.Response:
         if guild_id:
             try:
                 guild = _bot.get_guild(int(guild_id))
+                if not guild:
+                    logger.warning(f"OAuth: Guild {guild_id} not found in cache, fetching...")
+                    guild = await _bot.fetch_guild(int(guild_id))
+
                 if guild:
                     member = await guild.fetch_member(int(discord_id))
+                    if not member:
+                        logger.error(f"OAuth: Member {discord_id} not found in guild {guild_id}")
                     
                     # Надаємо основну роль реєстрації
                     if role_id:
                         role = guild.get_role(int(role_id))
+                        if not role:
+                            logger.warning(f"OAuth: Role {role_id} not found in cache, fetching all roles...")
+                            roles = await guild.fetch_roles()
+                            role = discord.utils.get(roles, id=int(role_id))
+
                         if member and role:
                             await member.add_roles(role)
                             role_assigned = True
                             logger.info(f"OAuth: надано основну роль {role.name} користувачу {discord_id}")
+                        else:
+                            if not role:
+                                logger.error(f"OAuth: Role {role_id} not found even after fetch")
+                            if not member:
+                                logger.error(f"OAuth: Member {discord_id} is None during role assignment")
+                    else:
+                        logger.warning("OAuth: REGISTERED_ROLE_ID is not set in .env")
                     
                     # Синхронізуємо ролі за статистикою
                     stats = await get_sync_stats(player["membership_type"], player["membership_id"])
@@ -90,9 +108,11 @@ async def _callback(request: web.Request) -> web.Response:
                         synced_role_names = await sync_member_roles(member, stats)
                         if synced_role_names:
                             logger.info(f"OAuth: синхронізовано додаткові ролі для {discord_id}: {synced_role_names}")
+                else:
+                    logger.error(f"OAuth: Could not find guild {guild_id}")
 
             except Exception as e:
-                logger.error(f"OAuth: помилка при наданні ролей: {e}")
+                logger.error(f"OAuth: помилка при наданні ролей: {e}", exc_info=True)
 
         try:
             user = await _bot.fetch_user(int(discord_id))

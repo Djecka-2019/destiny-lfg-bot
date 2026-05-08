@@ -274,7 +274,7 @@ class LFGView(discord.ui.View):
                 await self._update_member_stats(interaction, session, user_id)
 
         await upsert_session(msg_id, session)
-        await interaction.message.edit(embed=build_lfg_embed(session), view=self)
+        await interaction.edit_original_response(embed=build_lfg_embed(session), view=self)
 
         thread_id = session.get("thread_id")
         if thread_id:
@@ -330,7 +330,7 @@ class LFGView(discord.ui.View):
         for item in self.children:
             item.disabled = True
 
-        await interaction.message.edit(embed=build_lfg_embed(session, closed=True), view=self)
+        await interaction.edit_original_response(embed=build_lfg_embed(session, closed=True), view=self)
 
         thread_id = session.get("thread_id")
         if thread_id:
