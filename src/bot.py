@@ -39,6 +39,7 @@ class DestinyBot(commands.Bot):
         
         self.add_view(TemplateView("raid"))
         self.add_view(TemplateView("dungeon"))
+        self.add_view(TemplateView("pvp"))
         self.add_view(RegisterTemplateView())
 
         await fetch_activity_images()

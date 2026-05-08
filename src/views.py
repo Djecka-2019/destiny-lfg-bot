@@ -3,7 +3,7 @@ import re
 from datetime import date as date_type, datetime, timedelta
 import discord
 from bungie import commendation_defs, get_activity_completions, get_activity_stats, get_character_emblem, search_bungie_player_by_name
-from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON, RAIDS, DUNGEONS
+from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON, RAIDS, DUNGEONS, PVP_MAX
 from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, save_commendation, upsert_session
 from embeds import build_lfg_embed
 
@@ -11,8 +11,13 @@ logger = logging.getLogger("destiny_bot")
 
 class CreateActivityButton(discord.ui.Button):
     def __init__(self, activity_type: str) -> None:
-        label = "Створити збір на рейд" if activity_type == "raid" else "Створити збір на данж"
-        emoji = "⚔️" if activity_type == "raid" else "🗡️"
+        if activity_type == "raid":
+            label, emoji = "Створити збір на рейд", "⚔️"
+        elif activity_type == "dungeon":
+            label, emoji = "Створити збір на данж", "🗡️"
+        else:
+            label, emoji = "Створити збір на PVP", "🔫"
+            
         super().__init__(
             label=label,
             style=discord.ButtonStyle.blurple,
@@ -22,6 +27,33 @@ class CreateActivityButton(discord.ui.Button):
         self._activity_type = activity_type
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if self._activity_type == "pvp":
+            selected_activities = ["PVP"]
+            ping_role_ids = await get_ping_roles(str(interaction.guild_id))
+            if ping_role_ids:
+                role_options: list[tuple[str, str]] = []
+                for rid in ping_role_ids:
+                    if rid == "everyone":
+                        role_options.append(("everyone", "@everyone"))
+                    else:
+                        role = interaction.guild.get_role(int(rid))
+                        if role:
+                            role_options.append((str(role.id), role.name))
+                if role_options:
+                    view = PingRoleView(selected_activities, self._activity_type, role_options)
+                    await interaction.response.send_message(
+                        content="📢 **Оберіть роль для пінгу або пропустіть:**",
+                        view=view,
+                        ephemeral=True
+                    )
+                    return
+            await interaction.response.send_message(
+                content="📅 **Оберіть дату збору:**",
+                view=DateView(selected_activities, self._activity_type, mention=None),
+                ephemeral=True
+            )
+            return
+
         activities = RAIDS if self._activity_type == "raid" else DUNGEONS
         view = ActivitySelectView(activities, self._activity_type)
         label = "рейд" if self._activity_type == "raid" else "данж"
@@ -589,7 +621,13 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             return
 
         time_str = f"{h:02d}:{m:02d}"
-        capacity = RAID_MAX if self._activity_type == "raid" else DUNGEON_MAX
+        if self._activity_type == "raid":
+            capacity = RAID_MAX
+        elif self._activity_type == "dungeon":
+            capacity = DUNGEON_MAX
+        else:
+            capacity = PVP_MAX
+            
         leader_id = str(interaction.user.id)
         description = self.description_input.value.strip()
         now = datetime.now(TZ_KYIV)
@@ -655,7 +693,14 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             content=mention_content, embed=build_lfg_embed(session), view=view
         )
         message = await interaction.original_response()
-        activity_label = "Рейд" if self._activity_type == "raid" else "Данж"
+        
+        if self._activity_type == "raid":
+            activity_label = "Рейд"
+        elif self._activity_type == "dungeon":
+            activity_label = "Данж"
+        else:
+            activity_label = "PVP"
+            
         try:
             date_label = f" {scheduled.strftime('%d.%m')}" if scheduled.date() != now.date() else ""
             thread_name = f"[{activity_label}] {activity_name} о {time_str}{date_label}"

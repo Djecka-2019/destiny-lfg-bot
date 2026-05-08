@@ -5,7 +5,7 @@ from constants import DUNGEONS, RAIDS
 from database import add_ping_role, get_commendation_stats, get_commendations_given_count, get_discord_profile, get_ping_roles, remove_ping_role, save_profile
 from embeds import build_commendation_embed, build_profile_embed, build_lfg_embed
 from oauth import generate_auth_link
-from views import ActivitySelectView, TemplateView
+from views import ActivitySelectView, TemplateView, RegisterTemplateView
 
 class _OAuthLinkView(discord.ui.View):
     def __init__(self, url: str) -> None:
@@ -143,26 +143,96 @@ def setup_commands(bot) -> None:
             "🗡️ **Оберіть данж для збору:**", view=view, ephemeral=True
         )
 
+    @bot.tree.command(name="пошук-пвп", description="Створити збір на PVP в Destiny 2")
+    async def search_pvp(interaction: discord.Interaction) -> None:
+        # Для PVP ми пропускаємо вибір активності і йдемо одразу до ролей/дати
+        from views import DateView, PingRoleView
+        from database import get_ping_roles
+        
+        selected_activities = ["PVP"]
+        ping_role_ids = await get_ping_roles(str(interaction.guild_id))
+        if ping_role_ids:
+            role_options: list[tuple[str, str]] = []
+            for rid in ping_role_ids:
+                if rid == "everyone":
+                    role_options.append(("everyone", "@everyone"))
+                else:
+                    role = interaction.guild.get_role(int(rid))
+                    if role:
+                        role_options.append((str(role.id), role.name))
+            if role_options:
+                view = PingRoleView(selected_activities, "pvp", role_options)
+                await interaction.response.send_message(
+                    content="📢 **Оберіть роль для пінгу або пропустіть:**",
+                    view=view,
+                    ephemeral=True
+                )
+                return
+        await interaction.response.send_message(
+            content="📅 **Оберіть дату збору:**",
+            view=DateView(selected_activities, "pvp", mention=None),
+            ephemeral=True
+        )
+
     @bot.tree.command(name="шаблон", description="Надіслати шаблонне повідомлення з кнопкою для створення збору")
     @app_commands.describe(
-        тип="Тип активності (рейд або данж)",
-        заголовок="Текст повідомлення (необов'язково)",
+        тип="Тип активності (рейд, данж або пвп)",
+        канал="Канал, куди надіслати повідомлення (за замовчуванням — поточний)",
+        заголовок="Заголовок ембеду",
+        опис="Опис ембеду",
     )
     @app_commands.choices(тип=[
         app_commands.Choice(name="Рейд", value="raid"),
         app_commands.Choice(name="Данж", value="dungeon"),
+        app_commands.Choice(name="PVP", value="pvp"),
     ])
     @app_commands.checks.has_permissions(manage_channels=True)
     async def send_template(
         interaction: discord.Interaction,
         тип: str,
+        канал: discord.TextChannel | None = None,
         заголовок: str | None = None,
+        опис: str | None = None,
     ) -> None:
+        target_channel = канал or interaction.channel
         view = TemplateView(тип)
-        default_raid = "⚔️ **Збори на рейди**\nНатисніть кнопку нижче, щоб створити новий збір."
-        default_dungeon = "🗡️ **Збори на данжі**\nНатисніть кнопку нижче, щоб створити новий збір."
-        content = заголовок or (default_raid if тип == "raid" else default_dungeon)
-        await interaction.response.send_message(content, view=view)
+        
+        if тип == "raid":
+            title = заголовок or "⚔️ Організація рейдів"
+            color = discord.Color.from_rgb(255, 185, 0)
+        elif тип == "dungeon":
+            title = заголовок or "🗡️ Організація данжів"
+            color = discord.Color.from_rgb(130, 50, 210)
+        else:
+            title = заголовок or "🔫 Організація PVP"
+            color = discord.Color.from_rgb(220, 20, 60)
+        
+        default_desc = (
+            "Бажаєте зібрати команду для спільного проходження? Натисніть кнопку нижче!\n\n"
+            "**Як це працює:**\n"
+            "1. Натисніть на кнопку під цим повідомленням.\n"
+            "2. Оберіть активність у меню (для рейдів/данжів).\n"
+            "3. Вкажіть час та додаткову інформацію.\n"
+            "4. Бот створить збір та окрему гілку для обговорення."
+        )
+        description = опис or default_desc
+        
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=color
+        )
+        
+        # Використовуємо Sweeper Bot для всіх прев'ю
+        image_url = "https://www.bungie.net/img/theme/bungienet/bgs/bg_error_sweeperbot.jpg"
+        embed.set_image(url=image_url)
+        embed.set_footer(text="Destiny LFG • Натисніть кнопку для старту")
+
+        try:
+            await target_channel.send(embed=embed, view=view)
+            await interaction.response.send_message(f"✅ Шаблон надіслано у {target_channel.mention}", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Помилка: {e}", ephemeral=True)
 
     @bot.tree.command(name="додати-аккаунт", description="Прив'яжіть ваш акаунт Bungie до Discord через OAuth")
     async def link_account(interaction: discord.Interaction) -> None:
@@ -183,21 +253,48 @@ def setup_commands(bot) -> None:
         await link_account(interaction)
 
     @bot.tree.command(name="шаблон-реєстрації", description="Надіслати повідомлення з кнопкою для реєстрації")
-    @app_commands.describe(заголовок="Текст повідомлення (необов'язково)")
+    @app_commands.describe(
+        канал="Канал, куди надіслати повідомлення (за замовчуванням — поточний)",
+        заголовок="Заголовок ембеду",
+        опис="Опис ембеду",
+    )
     @app_commands.checks.has_permissions(manage_channels=True)
     async def send_register_template(
         interaction: discord.Interaction,
+        канал: discord.TextChannel | None = None,
         заголовок: str | None = None,
+        опис: str | None = None,
     ) -> None:
-        default_content = (
-            "👋 **Вітаємо на сервері!**\n\n"
-            "Щоб отримати повний доступ та можливість створювати збори, "
-            "вам потрібно прив'язати свій Bungie акаунт.\n"
-            "Натисніть кнопку нижче, щоб розпочати процес."
-        )
-        content = заголовок or default_content
+        target_channel = канал or interaction.channel
         view = RegisterTemplateView()
-        await interaction.response.send_message(content, view=view)
+        
+        title = заголовок or "🔗 Реєстрація Bungie акаунту"
+        
+        default_desc = (
+            "Вітаємо у нашій спільноті! Для отримання доступу до всіх функцій бота "
+            "та сервера, необхідно прив'язати ваш Bungie акаунт.\n\n"
+            "**Після реєстрації ви отримаєте:**\n"
+            "• Роль зареєстрованого користувача.\n"
+            "• Можливість створювати збори на рейди та данжі.\n"
+            "• Автоматичне відображення вашої статистики у зборах."
+        )
+        description = опис or default_desc
+        
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=discord.Color.blue()
+        )
+        
+        # Використовуємо зображення з логотипом Bungie/Destiny
+        embed.set_image(url="https://www.bungie.net/common/destiny2_content/icons/870634288017351b.jpg")
+        embed.set_footer(text="Destiny LFG • Натисніть кнопку для авторизації")
+
+        try:
+            await target_channel.send(embed=embed, view=view)
+            await interaction.response.send_message(f"✅ Шаблон реєстрації надіслано у {target_channel.mention}", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Помилка: {e}", ephemeral=True)
 
     @bot.tree.command(name="профіль", description="Переглянути статистику Destiny 2")
     @app_commands.describe(
