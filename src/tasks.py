@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import discord
 from discord.ext import tasks
 from constants import TZ_KYIV, RAIDS, DUNGEONS, RANDOM_RAID, RANDOM_DUNGEON
-from database import lfg_sessions, upsert_session, get_ping_roles
+from database import lfg_sessions, upsert_session
 from embeds import build_lfg_embed
 
 logger = logging.getLogger("destiny_bot")
@@ -104,13 +104,13 @@ async def reminder_task() -> None:
             try:
                 channel = await _bot.fetch_channel(int(channel_id))
                 if channel:
-                    mention_part = ""
-                    ping_role_ids = await get_ping_roles(guild_id)
-                    if ping_role_ids:
-                        if "everyone" in ping_role_ids:
-                            mention_part = "@everyone "
-                        else:
-                            mention_part = " ".join([f"<@&{rid}>" for rid in ping_role_ids if rid != "everyone"]) + " "
+                    mention = session.get("mention")
+                    if mention == "everyone":
+                        mention_part = "@everyone "
+                    elif mention:
+                        mention_part = f"<@&{mention}> "
+                    else:
+                        mention_part = ""
                     
                     slots_left = session["capacity"] - len(session["members"])
                     await channel.send(

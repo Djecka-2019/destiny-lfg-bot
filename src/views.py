@@ -364,6 +364,7 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             "options":       options,
             "votes":         {},
             "member_data":   {},
+            "mention":       self._mention,
         }
         view = LFGView(session)
         await view._update_member_stats(interaction, session, leader_id)

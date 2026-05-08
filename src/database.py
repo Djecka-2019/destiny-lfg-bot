@@ -26,7 +26,8 @@ async def init_db() -> None:
                 reminder_sent INTEGER NOT NULL DEFAULT 0,
                 member_data   TEXT NOT NULL DEFAULT '{}',
                 votes         TEXT NOT NULL DEFAULT '{}',
-                options       TEXT NOT NULL DEFAULT '[]'
+                options       TEXT NOT NULL DEFAULT '[]',
+                mention       TEXT
             )
         """)
         for col, typedef in [
@@ -38,6 +39,7 @@ async def init_db() -> None:
             ("member_data",   "TEXT NOT NULL DEFAULT '{}'"),
             ("votes",         "TEXT NOT NULL DEFAULT '{}'"),
             ("options",       "TEXT NOT NULL DEFAULT '[]'"),
+            ("mention",       "TEXT"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
@@ -82,6 +84,7 @@ async def load_sessions_from_db() -> None:
                     "member_data":   json.loads(row["member_data"] if row["member_data"] else "{}"),
                     "votes":         json.loads(row["votes"] if row["votes"] else "{}"),
                     "options":       json.loads(row["options"] if row["options"] else "[]"),
+                    "mention":       row["mention"],
                 }
 
 async def upsert_session(message_id: str, session: dict) -> None:
@@ -92,8 +95,8 @@ async def upsert_session(message_id: str, session: dict) -> None:
                 (message_id, activity, activity_type, time_str, description,
                  leader_id, leader_name, capacity, thread_id, members, reserves,
                  guild_id, channel_id, scheduled_at, reminder_sent,
-                 member_data, votes, options)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 member_data, votes, options, mention)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(message_id) DO UPDATE SET
                 thread_id     = excluded.thread_id,
                 members       = excluded.members,
@@ -101,7 +104,8 @@ async def upsert_session(message_id: str, session: dict) -> None:
                 reminder_sent = excluded.reminder_sent,
                 member_data   = excluded.member_data,
                 votes         = excluded.votes,
-                options       = excluded.options
+                options       = excluded.options,
+                mention       = excluded.mention
             """,
             (
                 message_id,
@@ -122,6 +126,7 @@ async def upsert_session(message_id: str, session: dict) -> None:
                 json.dumps(session.get("member_data", {})),
                 json.dumps(session.get("votes", {})),
                 json.dumps(session.get("options", [])),
+                session.get("mention"),
             ),
         )
         await db.commit()
