@@ -382,3 +382,58 @@ async def get_activity_completions(membership_type: int, membership_id: str) -> 
         if (total := sum(hash_completions.get(h, 0) for h in hashes)) > 0
     }
 
+async def get_sync_stats(membership_type: int, membership_id: str) -> dict[str, int]:
+    """Отримує статистику для синхронізації ролей (метрики та прогрес)."""
+    api_key = os.getenv("BUNGIE_API_KEY")
+    if not api_key:
+        return {}
+
+    headers = {"X-API-Key": api_key}
+    # 202: CharacterProgressions, 1100: Metrics
+    url = f"{BUNGIE_BASE}/Platform/Destiny2/{membership_type}/Profile/{membership_id}/?components=202,1100"
+    
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as http:
+        try:
+            async with http.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    return {}
+                data = await resp.json()
+        except Exception as e:
+            logger.error(f"Помилка при отриманні статистики для синхронізації: {e}")
+            return {}
+
+    response = data.get("Response", {})
+    metrics = response.get("metrics", {}).get("data", {}).get("metrics", {})
+    
+    # Метрики (lifetime)
+    # 3423710777: Total Raid Completions
+    # 2643509121: Grandmaster Nightfall Completions
+    # 1765245062: Trials Flawless Tickets
+    # 1356024107: Gambit Infamy Resets (lifetime)
+    
+    def get_metric(m_hash: int) -> int:
+        m = metrics.get(str(m_hash), {})
+        return m.get("objectiveProgress", {}).get("progress", 0)
+
+    stats = {
+        "raids": get_metric(3423710777),
+        "gms": get_metric(2643509121),
+        "trials": get_metric(1765245062),
+        "gambit_resets": get_metric(1356024107),
+    }
+
+    # ПВП Ранг (Competitive Division)
+    # Шукаємо прогрес на персонажах
+    char_progressions = response.get("characterProgressions", {}).get("data", {})
+    max_pvp_rank = 0
+    for char_id in char_progressions:
+        progressions = char_progressions[char_id].get("progressions", {})
+        # 3696598664: Competitive Division (Glory/Rank)
+        comp_prog = progressions.get("3696598664", {})
+        rank = comp_prog.get("currentProgress", 0)
+        if rank > max_pvp_rank:
+            max_pvp_rank = rank
+    
+    stats["pvp_rank"] = max_pvp_rank
+    return stats
+

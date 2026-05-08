@@ -2,8 +2,9 @@ import os
 import logging
 import secrets
 from aiohttp import web
-from bungie import exchange_code, get_bungie_memberships
+from bungie import exchange_code, get_bungie_memberships, get_sync_stats
 from database import get_and_delete_oauth_state, save_oauth_state, save_profile
+from role_sync import sync_member_roles
 
 logger = logging.getLogger("destiny_bot")
 
@@ -67,24 +68,43 @@ async def _callback(request: web.Request) -> web.Response:
         guild_id = os.getenv("GUILD_ID")
         role_id = os.getenv("REGISTERED_ROLE_ID")
         role_assigned = False
+        synced_role_names = []
 
-        if guild_id and role_id:
+        if guild_id:
             try:
                 guild = _bot.get_guild(int(guild_id))
                 if guild:
                     member = await guild.fetch_member(int(discord_id))
-                    role = guild.get_role(int(role_id))
-                    if member and role:
-                        await member.add_roles(role)
-                        role_assigned = True
-                        logger.info(f"OAuth: надано роль {role.name} користувачу {discord_id}")
+                    
+                    # Надаємо основну роль реєстрації
+                    if role_id:
+                        role = guild.get_role(int(role_id))
+                        if member and role:
+                            await member.add_roles(role)
+                            role_assigned = True
+                            logger.info(f"OAuth: надано основну роль {role.name} користувачу {discord_id}")
+                    
+                    # Синхронізуємо ролі за статистикою
+                    stats = await get_sync_stats(player["membership_type"], player["membership_id"])
+                    if stats and member:
+                        synced_role_names = await sync_member_roles(member, stats)
+                        if synced_role_names:
+                            logger.info(f"OAuth: синхронізовано додаткові ролі для {discord_id}: {synced_role_names}")
+
             except Exception as e:
-                logger.error(f"OAuth: помилка при наданні ролі: {e}")
+                logger.error(f"OAuth: помилка при наданні ролей: {e}")
 
         try:
             user = await _bot.fetch_user(int(discord_id))
-            role_msg = " Тобі також надано роль зареєстрованого користувача." if role_assigned else ""
-            await user.send(f"✅ Акаунт **{player['bungie_name']}** успішно прив'язано до вашого Discord!{role_msg}")
+            msgs = []
+            if role_assigned:
+                msgs.append("Тобі надано роль зареєстрованого користувача.")
+            if synced_role_names:
+                role_list = ", ".join(synced_role_names)
+                msgs.append(f"Також на основі твоєї статистики Bungie тобі надано ролі: **{role_list}**.")
+            
+            final_msg = " ".join(msgs)
+            await user.send(f"✅ Акаунт **{player['bungie_name']}** успішно прив'язано до вашого Discord! {final_msg}")
         except Exception as e:
             logger.warning(f"Не вдалося надіслати DM користувачу {discord_id}: {e}")
 

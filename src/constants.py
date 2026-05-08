@@ -57,5 +57,19 @@ DUNGEONS = [
 RAID_MAX = 6
 DUNGEON_MAX = 3
 PVP_MAX = 3
-SHERPA_THRESHOLD = 2
-NEWBIE_THRESHOLD = 2
+EXPERIENCED_THRESHOLD = 10
+
+import json
+import os
+
+def load_role_sync_config() -> dict:
+    config_path = os.getenv("ROLE_SYNC_CONFIG", "role_sync.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading role sync config: {e}")
+    return {}
+
+ROLE_SYNC = load_role_sync_config()

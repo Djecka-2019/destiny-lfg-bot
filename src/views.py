@@ -3,7 +3,7 @@ import re
 from datetime import date as date_type, datetime, timedelta
 import discord
 from bungie import commendation_defs, get_activity_completions, get_activity_stats, get_character_emblem, search_bungie_player_by_name
-from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON, RAIDS, DUNGEONS, PVP_MAX
+from constants import DUNGEON_MAX, EXPERIENCED_THRESHOLD, RAID_MAX, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON, RAIDS, DUNGEONS, PVP_MAX
 from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, save_commendation, upsert_session
 from embeds import build_lfg_embed
 
@@ -226,8 +226,9 @@ class LFGView(discord.ui.View):
             session.setdefault("member_data", {})[user_id] = "?"
             return
 
-        comp, sherpa = await get_activity_stats(membership_type, membership_id, activity)
-        session.setdefault("member_data", {})[user_id] = f"{comp} / {sherpa}"
+        comp, _ = await get_activity_stats(membership_type, membership_id, activity)
+        exp = "⭐" if comp >= EXPERIENCED_THRESHOLD else ""
+        session.setdefault("member_data", {})[user_id] = f"{comp}{exp}"
 
     @discord.ui.button(
         label="➕ Приєднатись / Вийти",

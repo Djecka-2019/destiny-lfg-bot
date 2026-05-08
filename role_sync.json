@@ -1,0 +1,41 @@
+{
+    "gambit": {
+        "resets": [
+            {"threshold": 20, "role_id": "1085901601539108964"},
+            {"threshold": 10, "role_id": "1085901168733061211"},
+            {"threshold": 3,  "role_id": "1085901045957414962"}
+        ]
+    },
+    "strikes": {
+        "gms": [
+            {"threshold": 100, "role_id": "1085902018616496359"},
+            {"threshold": 50,  "role_id": "1085901912991338507"},
+            {"threshold": 5,   "role_id": "1085901830321602691"}
+        ]
+    },
+    "raids": {
+        "clears": [
+            {"threshold": 250, "role_id": "1085902566686199958"},
+            {"threshold": 150, "role_id": "1085902343238848512"},
+            {"threshold": 50,  "role_id": "1085902263253475369"}
+        ]
+    },
+    "trials": {
+        "flawless": [
+            {"threshold": 100, "role_id": "1011619692919664751"},
+            {"threshold": 30,  "role_id": "1085903014893736028"},
+            {"threshold": 15,  "role_id": "1085902930143629322"},
+            {"threshold": 1,   "role_id": "1085902850657374209"}
+        ]
+    },
+    "pvp_comp": {
+        "ranks": [
+            {"threshold": 10000, "role_id": "1085900865178714213"},
+            {"threshold": 8750,  "role_id": "1085900703916101672"},
+            {"threshold": 7250,  "role_id": "1085900500324589638"},
+            {"threshold": 5750,  "role_id": "1085900401146081392"},
+            {"threshold": 3750,  "role_id": "1085900268903870574"},
+            {"threshold": 0,     "role_id": "1085899552416084050"}
+        ]
+    }
+}

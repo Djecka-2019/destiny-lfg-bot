@@ -4,9 +4,10 @@
 The bot uses a template-based system for creating LFGs. Instead of users typing slash commands directly in public channels, administrators should post pinned "Template" messages.
 
 ### Commands:
-- `/шаблон тип:[Рейд/Данж] [канал:#channel]`
+- `/шаблон тип:[Рейд/Данж/PVP] [канал:#channel]`
   - Posts a persistent embed with a button to start the creation flow.
   - Sends a clean message (no interaction header) to the target channel.
+  - PVP skips activity selection and goes straight to time selection.
 - `/шаблон-реєстрації [канал:#channel]`
   - Posts an onboarding message with a "Link Account" button.
   - Automatically assigns the role defined in `REGISTERED_ROLE_ID` upon successful linking.
@@ -14,6 +15,11 @@ The bot uses a template-based system for creating LFGs. Instead of users typing 
 ## 🧹 Automatic Maintenance
 - **Cleanup Task**: The bot automatically deletes LFG messages and their discussion threads **3 hours after the scheduled start time**.
 - **Frequency**: The cleanup task runs every 30 minutes.
+
+## 📊 Capacities
+- **Raids**: 6 players
+- **Dungeons**: 3 players
+- **PVP**: 3 players
 
 ## ⚙️ Configuration (.env)
 - `GUILD_ID`: The ID of the main server where roles are assigned.

@@ -1,7 +1,7 @@
 from datetime import datetime
 import discord
 from bungie import activity_images, commendation_defs
-from constants import DUNGEONS, RAIDS, SHERPA_THRESHOLD
+from constants import DUNGEONS, RAIDS, EXPERIENCED_THRESHOLD, RANDOM_RAID, RANDOM_DUNGEON
 
 def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     activity = session["activity"]
@@ -18,15 +18,26 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     votes = session.get("votes", {})
 
     is_raid = activity_type == "raid"
+    is_pvp = activity_type == "pvp"
+    
     if closed:
         color = discord.Color.dark_gray()
     elif is_raid:
         color = discord.Color.from_rgb(255, 185, 0)
+    elif is_pvp:
+        color = discord.Color.from_rgb(220, 20, 60)
     else:
         color = discord.Color.from_rgb(130, 50, 210)
 
-    activity_label = "Рейд" if is_raid else "Данж"
-    emoji = "⚔️" if is_raid else "🗡️"
+    if is_raid:
+        activity_label = "Рейд"
+        emoji = "⚔️"
+    elif is_pvp:
+        activity_label = "PVP"
+        emoji = "🔫"
+    else:
+        activity_label = "Данж"
+        emoji = "🗡️"
     scheduled_at = session.get("scheduled_at")
     if scheduled_at:
         try:
@@ -91,7 +102,13 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
         status = "✅ Набір відкрито"
 
     embed.set_footer(text=f"Організатор: {leader_name}  •  {status}")
-    image_url = activity_images.get(activity)
+    
+    # Спеціальне зображення для голосування, рандомних рейдів та PVP
+    if options or activity in (RANDOM_RAID, RANDOM_DUNGEON) or is_pvp:
+        image_url = "https://images.seattletimes.com/wp-content/uploads/2025/08/08042025_Game-Destiny_2_Edge_of_Fate-1_103514.jpg?d=2040x1148"
+    else:
+        image_url = activity_images.get(activity)
+        
     if image_url:
         embed.set_image(url=image_url)
     return embed
@@ -136,8 +153,8 @@ def build_profile_embed(bungie_name: str, completions: dict[str, int]) -> discor
         for name in activity_list:
             n = completions.get(name, 0)
             total += n
-            sherpa = "  🎓" if n >= SHERPA_THRESHOLD else ""
-            lines.append(f"`{n}` {name}{sherpa}")
+            exp = " ⭐" if n >= EXPERIENCED_THRESHOLD else ""
+            lines.append(f"`{n}` {name}{exp}")
         return lines, total
 
     raid_lines, total_raids = _lines(RAIDS)
@@ -152,5 +169,5 @@ def build_profile_embed(bungie_name: str, completions: dict[str, int]) -> discor
         value="\n".join(dungeon_lines),
         inline=False,
     )
-    embed.set_footer(text=f"🎓 = Шерпа ({SHERPA_THRESHOLD}+ закриттів)")
+    embed.set_footer(text=f"⭐ = Досвідчений ({EXPERIENCED_THRESHOLD}+ закриттів)")
     return embed
