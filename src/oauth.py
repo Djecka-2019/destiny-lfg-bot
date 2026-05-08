@@ -64,9 +64,27 @@ async def _callback(request: web.Request) -> web.Response:
     logger.info(f"OAuth: прив'язано {player['bungie_name']} → Discord {discord_id}")
 
     if _bot:
+        guild_id = os.getenv("GUILD_ID")
+        role_id = os.getenv("REGISTERED_ROLE_ID")
+        role_assigned = False
+
+        if guild_id and role_id:
+            try:
+                guild = _bot.get_guild(int(guild_id))
+                if guild:
+                    member = await guild.fetch_member(int(discord_id))
+                    role = guild.get_role(int(role_id))
+                    if member and role:
+                        await member.add_roles(role)
+                        role_assigned = True
+                        logger.info(f"OAuth: надано роль {role.name} користувачу {discord_id}")
+            except Exception as e:
+                logger.error(f"OAuth: помилка при наданні ролі: {e}")
+
         try:
             user = await _bot.fetch_user(int(discord_id))
-            await user.send(f"✅ Акаунт **{player['bungie_name']}** успішно прив'язано до вашого Discord!")
+            role_msg = " Тобі також надано роль зареєстрованого користувача." if role_assigned else ""
+            await user.send(f"✅ Акаунт **{player['bungie_name']}** успішно прив'язано до вашого Discord!{role_msg}")
         except Exception as e:
             logger.warning(f"Не вдалося надіслати DM користувачу {discord_id}: {e}")
 

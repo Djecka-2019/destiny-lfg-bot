@@ -5,7 +5,7 @@ from constants import DUNGEONS, RAIDS
 from database import add_ping_role, get_commendation_stats, get_commendations_given_count, get_discord_profile, get_ping_roles, remove_ping_role, save_profile
 from embeds import build_commendation_embed, build_profile_embed, build_lfg_embed
 from oauth import generate_auth_link
-from views import ActivitySelectView
+from views import ActivitySelectView, TemplateView
 
 class _OAuthLinkView(discord.ui.View):
     def __init__(self, url: str) -> None:
@@ -143,6 +143,27 @@ def setup_commands(bot) -> None:
             "🗡️ **Оберіть данж для збору:**", view=view, ephemeral=True
         )
 
+    @bot.tree.command(name="шаблон", description="Надіслати шаблонне повідомлення з кнопкою для створення збору")
+    @app_commands.describe(
+        тип="Тип активності (рейд або данж)",
+        заголовок="Текст повідомлення (необов'язково)",
+    )
+    @app_commands.choices(тип=[
+        app_commands.Choice(name="Рейд", value="raid"),
+        app_commands.Choice(name="Данж", value="dungeon"),
+    ])
+    @app_commands.checks.has_permissions(manage_channels=True)
+    async def send_template(
+        interaction: discord.Interaction,
+        тип: str,
+        заголовок: str | None = None,
+    ) -> None:
+        view = TemplateView(тип)
+        default_raid = "⚔️ **Збори на рейди**\nНатисніть кнопку нижче, щоб створити новий збір."
+        default_dungeon = "🗡️ **Збори на данжі**\nНатисніть кнопку нижче, щоб створити новий збір."
+        content = заголовок or (default_raid if тип == "raid" else default_dungeon)
+        await interaction.response.send_message(content, view=view)
+
     @bot.tree.command(name="додати-аккаунт", description="Прив'яжіть ваш акаунт Bungie до Discord через OAuth")
     async def link_account(interaction: discord.Interaction) -> None:
         url = await generate_auth_link(str(interaction.user.id))
@@ -152,6 +173,31 @@ def setup_commands(bot) -> None:
             view=_OAuthLinkView(url),
             ephemeral=True,
         )
+
+    @bot.tree.command(name="register", description="Alias for /додати-аккаунт")
+    async def register_alias(interaction: discord.Interaction) -> None:
+        await link_account(interaction)
+
+    @bot.tree.command(name="oauth", description="Alias for /додати-аккаунт")
+    async def oauth_alias(interaction: discord.Interaction) -> None:
+        await link_account(interaction)
+
+    @bot.tree.command(name="шаблон-реєстрації", description="Надіслати повідомлення з кнопкою для реєстрації")
+    @app_commands.describe(заголовок="Текст повідомлення (необов'язково)")
+    @app_commands.checks.has_permissions(manage_channels=True)
+    async def send_register_template(
+        interaction: discord.Interaction,
+        заголовок: str | None = None,
+    ) -> None:
+        default_content = (
+            "👋 **Вітаємо на сервері!**\n\n"
+            "Щоб отримати повний доступ та можливість створювати збори, "
+            "вам потрібно прив'язати свій Bungie акаунт.\n"
+            "Натисніть кнопку нижче, щоб розпочати процес."
+        )
+        content = заголовок or default_content
+        view = RegisterTemplateView()
+        await interaction.response.send_message(content, view=view)
 
     @bot.tree.command(name="профіль", description="Переглянути статистику Destiny 2")
     @app_commands.describe(

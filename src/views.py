@@ -3,11 +3,62 @@ import re
 from datetime import date as date_type, datetime, timedelta
 import discord
 from bungie import commendation_defs, get_activity_completions, get_activity_stats, get_character_emblem, search_bungie_player_by_name
-from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON
+from constants import DUNGEON_MAX, NEWBIE_THRESHOLD, RAID_MAX, SHERPA_THRESHOLD, TZ_KYIV, RANDOM_RAID, RANDOM_DUNGEON, RAIDS, DUNGEONS
 from database import delete_session, get_discord_profile, get_ping_roles, lfg_sessions, save_commendation, upsert_session
 from embeds import build_lfg_embed
 
 logger = logging.getLogger("destiny_bot")
+
+class CreateActivityButton(discord.ui.Button):
+    def __init__(self, activity_type: str) -> None:
+        label = "Створити збір на рейд" if activity_type == "raid" else "Створити збір на данж"
+        emoji = "⚔️" if activity_type == "raid" else "🗡️"
+        super().__init__(
+            label=label,
+            style=discord.ButtonStyle.blurple,
+            custom_id=f"template:create:{activity_type}",
+            emoji=emoji
+        )
+        self._activity_type = activity_type
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        activities = RAIDS if self._activity_type == "raid" else DUNGEONS
+        view = ActivitySelectView(activities, self._activity_type)
+        label = "рейд" if self._activity_type == "raid" else "данж"
+        await interaction.response.send_message(
+            f"{self.emoji} **Оберіть {label} для збору:**", view=view, ephemeral=True
+        )
+
+class TemplateView(discord.ui.View):
+    def __init__(self, activity_type: str) -> None:
+        super().__init__(timeout=None)
+        self.add_item(CreateActivityButton(activity_type))
+
+class LinkAccountButton(discord.ui.Button):
+    def __init__(self) -> None:
+        super().__init__(
+            label="Прив'язати акаунт",
+            style=discord.ButtonStyle.green,
+            custom_id="template:register",
+            emoji="🔗"
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from oauth import generate_auth_link
+        url = await generate_auth_link(str(interaction.user.id))
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Авторизуватись через Bungie", url=url, style=discord.ButtonStyle.link))
+        await interaction.response.send_message(
+            "🔗 Натисніть кнопку нижче для авторизації.\n"
+            "Це повідомлення бачите лише ви.",
+            view=view,
+            ephemeral=True
+        )
+
+class RegisterTemplateView(discord.ui.View):
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+        self.add_item(LinkAccountButton())
 
 class _CommendationChoice(discord.ui.Button):
     def __init__(self, index: int, name_uk: str, emoji: str) -> None:

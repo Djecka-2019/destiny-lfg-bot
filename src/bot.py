@@ -8,8 +8,8 @@ from bungie import fetch_activity_images, fetch_commendation_defs
 from commands import setup_commands
 from database import init_db, lfg_sessions, load_sessions_from_db
 from oauth import start_oauth_server
-from tasks import reminder_task, setup_tasks
-from views import LFGView
+from tasks import reminder_task, cleanup_task, setup_tasks
+from views import LFGView, TemplateView, RegisterTemplateView
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +36,11 @@ class DestinyBot(commands.Bot):
         self.add_view(LFGView())
         for session in lfg_sessions.values():
             self.add_view(LFGView(session))
+        
+        self.add_view(TemplateView("raid"))
+        self.add_view(TemplateView("dungeon"))
+        self.add_view(RegisterTemplateView())
+
         await fetch_activity_images()
         await fetch_commendation_defs()
         await start_oauth_server(self)
@@ -51,6 +56,8 @@ class DestinyBot(commands.Bot):
         logger.info(f"✅ Бот запущено: {self.user}  (ID: {self.user.id})")
         if not reminder_task.is_running():
             reminder_task.start()
+        if not cleanup_task.is_running():
+            cleanup_task.start()
 
 bot = DestinyBot()
 setup_commands(bot)

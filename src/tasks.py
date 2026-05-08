@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import discord
 from discord.ext import tasks
 from constants import TZ_KYIV, RAIDS, DUNGEONS, RANDOM_RAID, RANDOM_DUNGEON
-from database import lfg_sessions, upsert_session
+from database import lfg_sessions, upsert_session, delete_session
 from embeds import build_lfg_embed
 
 logger = logging.getLogger("destiny_bot")
@@ -123,6 +123,51 @@ async def reminder_task() -> None:
 
         session["reminder_sent"] = True
         await upsert_session(msg_id, session)
+
+@tasks.loop(minutes=30)
+async def cleanup_task() -> None:
+    now = datetime.now(TZ_KYIV)
+    logger.info(f"[cleanup] Checking for expired sessions...")
+    
+    deleted_count = 0
+    for msg_id, session in list(lfg_sessions.items()):
+        scheduled_str = session.get("scheduled_at")
+        if not scheduled_str:
+            continue
+            
+        try:
+            scheduled = datetime.fromisoformat(scheduled_str)
+            if scheduled.tzinfo is None:
+                scheduled = scheduled.replace(tzinfo=TZ_KYIV)
+        except ValueError:
+            continue
+            
+        if now > scheduled + timedelta(hours=3):
+            logger.info(f"[cleanup] Deleting session {msg_id} (started at {scheduled_str})")
+            channel_id = session.get("channel_id")
+            thread_id = session.get("thread_id")
+            
+            try:
+                channel = await _bot.fetch_channel(int(channel_id))
+                message = await channel.fetch_message(int(msg_id))
+                await message.delete()
+            except Exception as e:
+                logger.debug(f"[cleanup] Could not delete message {msg_id}: {e}")
+                
+            if thread_id:
+                try:
+                    thread = await _bot.fetch_channel(int(thread_id))
+                    await thread.delete()
+                except Exception as e:
+                    logger.debug(f"[cleanup] Could not delete thread {thread_id}: {e}")
+            
+            if msg_id in lfg_sessions:
+                del lfg_sessions[msg_id]
+            await delete_session(msg_id)
+            deleted_count += 1
+            
+    if deleted_count > 0:
+        logger.info(f"[cleanup] Deleted {deleted_count} expired sessions.")
 
 @reminder_task.before_loop
 async def before_reminder() -> None:
