@@ -39,7 +39,7 @@ async def _callback(request: web.Request) -> web.Response:
     discord_id = await get_and_delete_oauth_state(state)
     if not discord_id:
         return web.Response(
-            text=_html("❌ Помилка", "Посилання застаріло або недійсне.<br>Спробуйте <b>/додати-аккаунт</b> ще раз."),
+            text=_html("❌ Помилка", "Посилання застаріло або недійсне.<br>Спробуйте <b>/add-account</b> ще раз."),
             content_type="text/html",
             status=400,
         )
@@ -47,7 +47,7 @@ async def _callback(request: web.Request) -> web.Response:
     tokens = await exchange_code(code)
     if not tokens:
         return web.Response(
-            text=_html("❌ Помилка", "Не вдалося обмінути код авторизації.<br>Спробуйте <b>/додати-аккаунт</b> ще раз."),
+            text=_html("❌ Помилка", "Не вдалося обмінути код авторизації.<br>Спробуйте <b>/add-account</b> ще раз."),
             content_type="text/html",
             status=500,
         )

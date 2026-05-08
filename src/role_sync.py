@@ -18,9 +18,9 @@ async def sync_member_roles(member: discord.Member, stats: dict[str, int]) -> li
     # Збираємо всі ролі, які бот може контролювати (ті, що в ROLE_SYNC)
     controlled_role_ids = set()
     for category in ROLE_SYNC.values():
-        for _, roles in category.items():
-            for _, rid in roles:
-                controlled_role_ids.add(int(rid))
+        for subcat in category.values():
+            for entry in subcat:
+                controlled_role_ids.add(int(entry["role_id"]))
 
     current_role_ids = {role.id for role in member.roles}
     to_add = set()
