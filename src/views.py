@@ -360,6 +360,69 @@ class LFGView(discord.ui.View):
             )
 
     @discord.ui.button(
+        label="У запас",
+        style=discord.ButtonStyle.secondary,
+        custom_id="lfg:reserve_toggle",
+        emoji="⏳",
+    )
+    async def reserve_toggle(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.defer()
+
+        msg_id = str(interaction.message.id)
+        session = lfg_sessions.get(msg_id)
+        if not session:
+            await interaction.followup.send("Ця активність більше не активна.", ephemeral=True)
+            return
+
+        user_id = str(interaction.user.id)
+        members: list = session["members"]
+        reserves: list = session.setdefault("reserves", [])
+
+        if user_id in members:
+            await interaction.followup.send(
+                "ℹ️ Ви вже в основному складі. Натисніть **➕ Приєднатись / Вийти**, щоб спочатку покинути збір.",
+                ephemeral=True,
+            )
+            return
+
+        if user_id in reserves:
+            reserves.remove(user_id)
+            joined = False
+        else:
+            reserves.append(user_id)
+            await self._update_member_stats(interaction, session, user_id)
+            joined = True
+
+        await upsert_session(msg_id, session)
+        await interaction.edit_original_response(embed=build_lfg_embed(session), view=self)
+
+        thread_id = session.get("thread_id")
+        if thread_id:
+            thread = interaction.guild.get_thread(int(thread_id))
+            if not thread:
+                try:
+                    thread = await interaction.client.fetch_channel(int(thread_id))
+                except (discord.NotFound, discord.HTTPException):
+                    thread = None
+            if thread:
+                if joined:
+                    await thread.send(
+                        f"⏳ {interaction.user.mention} **добровільно став(-ла) у запас**."
+                    )
+                else:
+                    await thread.send(
+                        f"🔴 {interaction.user.mention} **вийшов(-ла) з запасних**."
+                    )
+
+        if joined:
+            await interaction.followup.send(
+                "⏳ Тебе додано до запасних. Якщо звільниться місце — тебе можуть перемістити до основного складу.",
+                ephemeral=True,
+            )
+
+    @discord.ui.button(
         label="Закрити збір",
         style=discord.ButtonStyle.red,
         custom_id="lfg:close",
