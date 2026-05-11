@@ -1,6 +1,7 @@
 import os
 import logging
 import secrets
+import discord
 from aiohttp import web
 from bungie import exchange_code, get_bungie_memberships, get_sync_stats
 from database import get_and_delete_oauth_state, save_oauth_state, save_profile
