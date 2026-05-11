@@ -600,9 +600,10 @@ class VoteSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         session = lfg_sessions.get(self._msg_id)
         if not session:
-            await interaction.response.send_message("Збір не знайдено.", ephemeral=True)
+            await interaction.followup.send("Збір не знайдено.", ephemeral=True)
             return
 
         user_id = str(interaction.user.id)
@@ -619,7 +620,7 @@ class VoteSelect(discord.ui.Select):
                 await msg.edit(embed=build_lfg_embed(session))
         except Exception:
             pass
-        await interaction.response.send_message(f"✅ Ваш голос за **{self.values[0]}** прийнято!", ephemeral=True)
+        await interaction.followup.send(f"✅ Ваш голос за **{self.values[0]}** прийнято!", ephemeral=True)
 
 class VoteSelectView(discord.ui.View):
     def __init__(self, msg_id: str, options: list[str]) -> None:
