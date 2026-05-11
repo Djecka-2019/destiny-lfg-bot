@@ -63,6 +63,7 @@ class DestinyBot(commands.Bot):
         await fetch_activity_images()
         await fetch_commendation_defs()
         await start_oauth_server(self)
+        setup_tasks(self)
         synced = await self.tree.sync()
         logger.info(f"Синхронізовано {len(synced)} команд(и) глобально. Завантажено сесій: {len(lfg_sessions)}")
         if GUILD_ID:
@@ -73,14 +74,9 @@ class DestinyBot(commands.Bot):
 
     async def on_ready(self) -> None:
         logger.info(f"✅ Бот запущено: {self.user}  (ID: {self.user.id})")
-        if not reminder_task.is_running():
-            reminder_task.start()
-        if not cleanup_task.is_running():
-            cleanup_task.start()
 
 bot = DestinyBot()
 setup_commands(bot)
-setup_tasks(bot)
 
 if __name__ == "__main__":
     if not TOKEN:
