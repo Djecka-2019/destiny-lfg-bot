@@ -27,6 +27,7 @@ class CreateActivityButton(discord.ui.Button):
         self._activity_type = activity_type
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         if self._activity_type == "pvp":
             selected_activities = ["PVP"]
             ping_role_ids = await get_ping_roles(str(interaction.guild_id))
@@ -41,13 +42,13 @@ class CreateActivityButton(discord.ui.Button):
                             role_options.append((str(role.id), role.name))
                 if role_options:
                     view = PingRoleView(selected_activities, self._activity_type, role_options)
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         content="📢 **Оберіть роль для пінгу або пропустіть:**",
                         view=view,
                         ephemeral=True
                     )
                     return
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 content="📅 **Оберіть дату збору:**",
                 view=DateView(selected_activities, self._activity_type, mention=None),
                 ephemeral=True
@@ -57,7 +58,7 @@ class CreateActivityButton(discord.ui.Button):
         activities = RAIDS if self._activity_type == "raid" else DUNGEONS
         view = ActivitySelectView(activities, self._activity_type)
         label = "рейд" if self._activity_type == "raid" else "данж"
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"{self.emoji} **Оберіть {label} для збору:**", view=view, ephemeral=True
         )
 
@@ -98,6 +99,7 @@ class _CommendationChoice(discord.ui.Button):
         self._index = index
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer()
         view: CommendationWizardView = self.view
         teammate_id = view._teammates[view._current]
         view._commendations[teammate_id] = self._index
@@ -111,6 +113,7 @@ class _CommendationSkip(discord.ui.Button):
         super().__init__(label="Пропустити", style=discord.ButtonStyle.secondary, emoji="➡️", row=1)
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer()
         await self.view._advance(interaction)
 
 
@@ -163,9 +166,9 @@ class CommendationWizardView(discord.ui.View):
         if self._current >= len(self._teammates):
             for item in self.children:
                 item.disabled = True
-            await interaction.response.edit_message(embed=self._build_summary_embed(), view=self)
+            await interaction.edit_original_response(embed=self._build_summary_embed(), view=self)
         else:
-            await interaction.response.edit_message(embed=self.build_step_embed())
+            await interaction.edit_original_response(embed=self.build_step_embed())
 
 
 class VoteButton(discord.ui.Button):
@@ -563,6 +566,7 @@ class ActivitySelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
         selected_activities = self.values
         ping_role_ids = await get_ping_roles(str(interaction.guild_id))
         if ping_role_ids:
@@ -576,14 +580,16 @@ class ActivitySelect(discord.ui.Select):
                         role_options.append((str(role.id), role.name))
             if role_options:
                 view = PingRoleView(selected_activities, self._activity_type, role_options)
-                await interaction.response.edit_message(
+                await interaction.followup.send(
                     content="📢 **Оберіть роль для пінгу або пропустіть:**",
                     view=view,
+                    ephemeral=True,
                 )
                 return
-        await interaction.response.edit_message(
+        await interaction.followup.send(
             content="📅 **Оберіть дату збору:**",
             view=DateView(selected_activities, self._activity_type, mention=None),
+            ephemeral=True,
         )
 
 class ActivitySelectView(discord.ui.View):

@@ -148,6 +148,8 @@ def setup_commands(bot) -> None:
         from views import DateView, PingRoleView
         from database import get_ping_roles
         
+        await interaction.response.defer(ephemeral=True)
+        
         selected_activities = ["PVP"]
         ping_role_ids = await get_ping_roles(str(interaction.guild_id))
         if ping_role_ids:
@@ -161,13 +163,13 @@ def setup_commands(bot) -> None:
                         role_options.append((str(role.id), role.name))
             if role_options:
                 view = PingRoleView(selected_activities, "pvp", role_options)
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     content="📢 **Оберіть роль для пінгу або пропустіть:**",
                     view=view,
                     ephemeral=True
                 )
                 return
-        await interaction.response.send_message(
+        await interaction.followup.send(
             content="📅 **Оберіть дату збору:**",
             view=DateView(selected_activities, "pvp", mention=None),
             ephemeral=True
