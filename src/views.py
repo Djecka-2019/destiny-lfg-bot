@@ -301,6 +301,14 @@ class LFGView(discord.ui.View):
                             except:
                                 pass
                     
+                    reminder_msg_id = session.get("reminder_msg_id")
+                    if reminder_msg_id:
+                        try:
+                            rem_msg = await interaction.channel.fetch_message(int(reminder_msg_id))
+                            await rem_msg.delete()
+                        except:
+                            pass
+                    
                     del lfg_sessions[msg_id]
                     await delete_session(msg_id)
                     return
@@ -464,6 +472,14 @@ class LFGView(discord.ui.View):
                     await thread.edit(archived=True, locked=True)
                 except discord.HTTPException:
                     pass
+
+        reminder_msg_id = session.get("reminder_msg_id")
+        if reminder_msg_id:
+            try:
+                rem_msg = await interaction.channel.fetch_message(int(reminder_msg_id))
+                await rem_msg.delete()
+            except:
+                pass
 
         del lfg_sessions[msg_id]
         await delete_session(msg_id)

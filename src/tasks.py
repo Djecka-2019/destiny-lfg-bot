@@ -113,11 +113,12 @@ async def reminder_task() -> None:
                         mention_part = ""
                     
                     slots_left = session["capacity"] - len(session["members"])
-                    await channel.send(
+                    reminder_msg = await channel.send(
                         f"📢 {mention_part}**Є вільні місця!**\n"
                         f"На **{session['activity']}** ({display_time}) залишилося **{slots_left}** місць. "
                         f"Приєднуйтесь: {msg_url}"
                     )
+                    session["reminder_msg_id"] = str(reminder_msg.id)
             except Exception as e:
                 logger.error(f"[reminder] Не вдалося надіслати загальне сповіщення: {e}")
 
@@ -146,13 +147,27 @@ async def cleanup_task() -> None:
             logger.info(f"[cleanup] Deleting session {msg_id} (started at {scheduled_str})")
             channel_id = session.get("channel_id")
             thread_id = session.get("thread_id")
+            reminder_msg_id = session.get("reminder_msg_id")
             
+            channel = None
             try:
                 channel = await _bot.fetch_channel(int(channel_id))
-                message = await channel.fetch_message(int(msg_id))
-                await message.delete()
             except Exception as e:
-                logger.debug(f"[cleanup] Could not delete message {msg_id}: {e}")
+                logger.debug(f"[cleanup] Could not fetch channel {channel_id}: {e}")
+
+            if channel:
+                try:
+                    message = await channel.fetch_message(int(msg_id))
+                    await message.delete()
+                except Exception as e:
+                    logger.debug(f"[cleanup] Could not delete message {msg_id}: {e}")
+                
+                if reminder_msg_id:
+                    try:
+                        rem_msg = await channel.fetch_message(int(reminder_msg_id))
+                        await rem_msg.delete()
+                    except Exception as e:
+                        logger.debug(f"[cleanup] Could not delete reminder message {reminder_msg_id}: {e}")
                 
             if thread_id:
                 try:
