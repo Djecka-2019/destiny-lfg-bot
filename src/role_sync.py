@@ -12,6 +12,12 @@ async def sync_member_roles(member: discord.Member, stats: dict[str, int]) -> li
     if not stats:
         return []
 
+    # Якщо всі статстики по нулям, можливо це помилка отримання даних або новий гравець.
+    # Щоб не знімати всі ролі помилково, ми нічого не робимо якщо всі ключові метрики порожні.
+    if all(v == 0 for v in stats.values()):
+        logger.warning(f"Stats for {member.display_name} are all zero, skipping sync to avoid accidental role removal.")
+        return []
+
     added_roles = []
     guild = member.guild
     

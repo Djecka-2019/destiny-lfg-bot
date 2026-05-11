@@ -1,11 +1,14 @@
+import os
 import logging
 import random
 from datetime import datetime, timedelta
 import discord
 from discord.ext import tasks
 from constants import TZ_KYIV, RAIDS, DUNGEONS, RANDOM_RAID, RANDOM_DUNGEON
-from database import lfg_sessions, upsert_session, delete_session
+from database import lfg_sessions, upsert_session, delete_session, get_all_profiles
 from embeds import build_lfg_embed
+from bungie import get_sync_stats
+from role_sync import sync_member_roles
 
 logger = logging.getLogger("destiny_bot")
 _bot = None
@@ -13,6 +16,53 @@ _bot = None
 def setup_tasks(bot) -> None:
     global _bot
     _bot = bot
+    reminder_task.start()
+    cleanup_task.start()
+    periodic_role_sync.start()
+
+@tasks.loop(hours=6)
+async def periodic_role_sync() -> None:
+    """Періодично синхронізує ролі для всіх зареєстрованих користувачів."""
+    if not _bot:
+        return
+
+    guild_id = os.getenv("GUILD_ID")
+    if not guild_id:
+        logger.warning("Periodic Sync: GUILD_ID не задано")
+        return
+
+    try:
+        guild = _bot.get_guild(int(guild_id))
+        if not guild:
+            guild = await _bot.fetch_guild(int(guild_id))
+    except Exception as e:
+        logger.error(f"Periodic Sync: не вдалося отримати гільдію: {e}")
+        return
+
+    profiles = await get_all_profiles()
+    logger.info(f"Periodic Sync: запуск для {len(profiles)} профілів")
+
+    for profile in profiles:
+        discord_id = profile["discord_id"]
+        try:
+            member = guild.get_member(int(discord_id))
+            if not member:
+                member = await guild.fetch_member(int(discord_id))
+            
+            if member:
+                stats = await get_sync_stats(profile["membership_type"], profile["membership_id"])
+                if stats:
+                    await sync_member_roles(member, stats)
+        except discord.NotFound:
+            logger.info(f"Periodic Sync: користувач {discord_id} не знайдений на сервері")
+        except Exception as e:
+            logger.error(f"Periodic Sync error for {discord_id}: {e}")
+
+    logger.info("Periodic Sync: завершено")
+
+@periodic_role_sync.before_loop
+async def before_periodic_sync():
+    await _bot.wait_until_ready()
 
 @tasks.loop(minutes=1)
 async def reminder_task() -> None:

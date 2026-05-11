@@ -329,6 +329,16 @@ def setup_commands(bot) -> None:
     async def sync_alias(interaction: discord.Interaction) -> None:
         await sync_roles_command(interaction)
 
+    @bot.tree.command(name="sync-all", description="Примусово синхронізувати ролі всіх користувачів (Admin only)")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def sync_all_command(interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        from tasks import periodic_role_sync
+        await interaction.followup.send("⏳ Починаю синхронізацію всіх користувачів...", ephemeral=True)
+        # Викликаємо функцію циклу безпосередньо як корутину
+        await periodic_role_sync()
+        await interaction.followup.send("✅ Глобальну синхронізацію завершено.", ephemeral=True)
+
     @bot.tree.command(name="profile", description="Переглянути статистику Destiny 2")
     @app_commands.describe(
         member="Discord користувач (необов'язково)",

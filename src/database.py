@@ -279,3 +279,12 @@ async def get_discord_profile(discord_id: str) -> tuple[int, str, str] | None:
         ) as cursor:
             row = await cursor.fetchone()
     return (row["membership_type"], row["membership_id"], row["bungie_name"]) if row else None
+
+
+async def get_all_profiles() -> list[dict]:
+    """Повертає всі профілі користувачів з бази даних."""
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM profiles") as cursor:
+            rows = await cursor.fetchall()
+    return [dict(row) for row in rows]

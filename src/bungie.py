@@ -420,12 +420,20 @@ async def get_sync_stats(membership_type: int, membership_id: str) -> dict[str, 
         m = metrics.get(str(m_hash), {})
         return m.get("objectiveProgress", {}).get("progress", 0)
 
+    # 3423710777: Total Raid Completions (Metric)
+    # 2329582303: Raid Clears (another possible metric)
+    raid_clears = get_metric(3423710777)
+    if raid_clears == 0:
+        raid_clears = get_metric(2329582303)
+
     stats = {
-        "raids": get_metric(3423710777),
+        "raids": raid_clears,
         "gms": get_metric(2643509121),
         "trials": get_metric(1765245062),
         "gambit_resets": get_metric(1356024107),
     }
+    
+    logger.debug(f"Stats for {membership_id}: {stats}")
 
     # ПВП Ранг (Competitive Division)
     # Шукаємо прогрес на персонажах
