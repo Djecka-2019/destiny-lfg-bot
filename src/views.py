@@ -860,8 +860,11 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             date_label = f" {scheduled.strftime('%d.%m')}" if scheduled.date() != now.date() else ""
             thread_name = f"[{activity_label}] {activity_name} о {time_str}{date_label}"
             if len(thread_name) > 100: thread_name = thread_name[:97] + "..."
-            thread = await message.create_thread(
+            
+            # Use interaction.channel.create_thread to ensure guild context is preserved
+            thread = await interaction.channel.create_thread(
                 name=thread_name,
+                message=message,
                 auto_archive_duration=1440,
             )
             await thread.send(
@@ -871,8 +874,8 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
                 f"Тут можна обговорювати активність."
             )
             session["thread_id"] = str(thread.id)
-        except discord.HTTPException as e:
-            logger.error(f"Не вдалося створити гілку: {e}")
+        except Exception as e:
+            logger.error(f"Не вдалося створити гілку: {e}", exc_info=True)
         msg_id = str(message.id)
         lfg_sessions[msg_id] = session
         await upsert_session(msg_id, session)
