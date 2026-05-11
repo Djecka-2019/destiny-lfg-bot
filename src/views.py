@@ -762,6 +762,7 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
         if not (0 <= h <= 23 and 0 <= m <= 59):
             await interaction.response.send_message(
                 "❌ Невірний час! Години: 00–23, хвилини: 00–59",
+                ephemeral=True,
             )
             return
 
@@ -791,6 +792,8 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             scheduled = now.replace(hour=h, minute=m, second=0, microsecond=0)
             if scheduled <= now:
                 scheduled += timedelta(days=1)
+
+        await interaction.response.defer()
 
         ts = int(scheduled.timestamp())
         display_time = f"<t:{ts}:f>" if scheduled.date() != now.date() else f"<t:{ts}:t>"
@@ -834,10 +837,10 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             mention_content = "@everyone"
         elif self._mention:
             mention_content = f"<@&{self._mention}>"
-        await interaction.response.send_message(
+        
+        message = await interaction.followup.send(
             content=mention_content, embed=build_lfg_embed(session), view=view
         )
-        message = await interaction.original_response()
         
         if self._activity_type == "raid":
             activity_label = "Рейд"
