@@ -846,7 +846,10 @@ class LFGModal(discord.ui.Modal, title="Налаштування збору"):
             mention_content = f"<@&{self._mention}>"
         
         message = await interaction.followup.send(
-            content=mention_content, embed=build_lfg_embed(session), view=view
+            content=mention_content,
+            embed=build_lfg_embed(session),
+            view=view,
+            allowed_mentions=discord.AllowedMentions(everyone=True, roles=True, users=True)
         )
         
         if self._activity_type == "raid":

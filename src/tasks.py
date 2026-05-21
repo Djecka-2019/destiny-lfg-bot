@@ -166,7 +166,8 @@ async def reminder_task() -> None:
                     reminder_msg = await channel.send(
                         f"📢 {mention_part}**Є вільні місця!**\n"
                         f"На **{session['activity']}** ({display_time}) залишилося **{slots_left}** місць. "
-                        f"Приєднуйтесь: {msg_url}"
+                        f"Приєднуйтесь: {msg_url}",
+                        allowed_mentions=discord.AllowedMentions(everyone=True, roles=True, users=True)
                     )
                     session["reminder_msg_id"] = str(reminder_msg.id)
             except Exception as e:
