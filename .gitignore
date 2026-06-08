@@ -3,3 +3,4 @@
 .env
 lfg_sessions.json
 lfg_sessions.db
+src/__pycache__

@@ -16,6 +16,7 @@ ACTIVITY_EN_NAMES: dict[str, str] = {
     "Кінець Кроти": "Crota's End",
     "Межа Спасіння": "Salvation's Edge",
     "Піски безкінечності": "The Desert Perpetual",
+    "Пантеон": "Pantheon",
     "Яма Єресі": "Pit of Heresy",
     "Пророцтво": "Prophecy",
     "Хватка Алчності": "Grasp of Avarice",
@@ -39,6 +40,7 @@ RAIDS = [
     "Кінець Кроти",
     "Межа Спасіння",
     "Піски безкінечності",
+    "Пантеон",
 ]
 
 DUNGEONS = [

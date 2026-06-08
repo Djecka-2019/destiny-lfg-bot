@@ -8,6 +8,13 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     activity_type = session["activity_type"]
     time_str = session["time"]
     description = session.get("description", "")
+    if not description and activity == "Пантеон":
+        description = (
+            "The Pantheon is a pinnacle raid boss rush activity in Destiny 2 that challenges fireteams to defeat "
+            "a gauntlet of iconic raid bosses in sequence. Originally introduced during the Into the Light update, "
+            "it features escalating difficulty, unique modifiers (like Classy Warfare/Shotcaller), and provides "
+            "premier rewards including Adept weapons and elusive Raid Exotics"
+        )
     members: list = session["members"]
     reserves: list = session.get("reserves", [])
     capacity: int = session["capacity"]
@@ -106,6 +113,8 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     # Спеціальне зображення для голосування, рандомних рейдів та PVP
     if options or activity in (RANDOM_RAID, RANDOM_DUNGEON) or is_pvp:
         image_url = "https://images.seattletimes.com/wp-content/uploads/2025/08/08042025_Game-Destiny_2_Edge_of_Fate-1_103514.jpg?d=2040x1148"
+    elif activity == "Пантеон":
+        image_url = "https://static0.polygonimages.com/wordpress/wp-content/uploads/chorus/uploads/chorus_asset/file/25428395/Pantheon_Header.jpg"
     else:
         image_url = activity_images.get(activity)
         
