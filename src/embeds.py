@@ -10,10 +10,10 @@ def build_lfg_embed(session: dict, closed: bool = False) -> discord.Embed:
     description = session.get("description", "")
     if not description and activity == "Пантеон":
         description = (
-            "The Pantheon is a pinnacle raid boss rush activity in Destiny 2 that challenges fireteams to defeat "
-            "a gauntlet of iconic raid bosses in sequence. Originally introduced during the Into the Light update, "
-            "it features escalating difficulty, unique modifiers (like Classy Warfare/Shotcaller), and provides "
-            "premier rewards including Adept weapons and elusive Raid Exotics"
+            "Пантеон — це вершина рейд-активностей у Destiny 2 у форматі бос-рашу, яка вимагає від бойових груп "
+            "здолати низку культових босів рейдів послідовно. Вперше представлена в оновленні «До Світла», "
+            "ця активність пропонує висхідну складність, унікальні модифікатори (як-от «Класова війна» або «Застрільник») "
+            "та цінні нагороди, включаючи адепт-зброю та рідкісну екзотичну зброю з рейдів."
         )
     members: list = session["members"]
     reserves: list = session.get("reserves", [])

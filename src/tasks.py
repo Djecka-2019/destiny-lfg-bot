@@ -200,41 +200,65 @@ async def cleanup_task() -> None:
             thread_id = session.get("thread_id")
             reminder_msg_id = session.get("reminder_msg_id")
             
+            should_delete_db = True
             channel = None
             try:
                 channel = await _bot.fetch_channel(int(channel_id))
+            except discord.NotFound:
+                logger.info(f"[cleanup] Channel {channel_id} not found, session {msg_id} will be removed from DB.")
+            except discord.Forbidden:
+                logger.warning(f"[cleanup] Access forbidden to channel {channel_id}, session {msg_id} will be removed from DB.")
             except Exception as e:
-                logger.debug(f"[cleanup] Could not fetch channel {channel_id}: {e}")
+                logger.error(f"[cleanup] Error fetching channel {channel_id}: {e}")
+                should_delete_db = False
 
             if channel:
                 try:
                     message = await channel.fetch_message(int(msg_id))
                     await message.delete()
+                except discord.NotFound:
+                    pass
+                except discord.Forbidden:
+                    logger.warning(f"[cleanup] Forbidden to delete message {msg_id} in channel {channel_id}")
                 except Exception as e:
-                    logger.debug(f"[cleanup] Could not delete message {msg_id}: {e}")
+                    logger.error(f"[cleanup] Error deleting message {msg_id}: {e}")
+                    should_delete_db = False
                 
                 if reminder_msg_id:
                     try:
                         rem_msg = await channel.fetch_message(int(reminder_msg_id))
                         await rem_msg.delete()
+                    except discord.NotFound:
+                        pass
+                    except discord.Forbidden:
+                        logger.warning(f"[cleanup] Forbidden to delete reminder message {reminder_msg_id}")
                     except Exception as e:
-                        logger.debug(f"[cleanup] Could not delete reminder message {reminder_msg_id}: {e}")
-                
+                        logger.error(f"[cleanup] Error deleting reminder message {reminder_msg_id}: {e}")
+
             if thread_id:
                 try:
                     thread = await _bot.fetch_channel(int(thread_id))
                     await thread.delete()
+                except discord.NotFound:
+                    pass
+                except discord.Forbidden:
+                    logger.warning(f"[cleanup] Forbidden to delete thread {thread_id}")
                 except Exception as e:
-                    logger.debug(f"[cleanup] Could not delete thread {thread_id}: {e}")
+                    logger.error(f"[cleanup] Error deleting thread {thread_id}: {e}")
             
-            if msg_id in lfg_sessions:
-                del lfg_sessions[msg_id]
-            await delete_session(msg_id)
-            deleted_count += 1
+            if should_delete_db:
+                if msg_id in lfg_sessions:
+                    del lfg_sessions[msg_id]
+                await delete_session(msg_id)
+                deleted_count += 1
             
     if deleted_count > 0:
         logger.info(f"[cleanup] Deleted {deleted_count} expired sessions.")
 
 @reminder_task.before_loop
 async def before_reminder() -> None:
+    await _bot.wait_until_ready()
+
+@cleanup_task.before_loop
+async def before_cleanup() -> None:
     await _bot.wait_until_ready()
