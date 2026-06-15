@@ -1,7 +1,7 @@
 import os
 import logging
 import aiohttp
-from constants import ACTIVITY_EN_NAMES, BUNGIE_BASE
+from constants import ACTIVITY_EN_NAMES, BUNGIE_BASE, RAIDS, RANDOM_RAID
 
 logger = logging.getLogger("destiny_bot")
 activity_images: dict[str, str] = {}
@@ -425,6 +425,10 @@ async def get_sync_stats(membership_type: int, membership_id: str) -> dict[str, 
     raid_clears = get_metric(3423710777)
     if raid_clears == 0:
         raid_clears = get_metric(2329582303)
+    if raid_clears == 0:
+        logger.warning(f"Raid metric hashes returned 0 for {membership_id}, falling back to activity hash sum")
+        completions = await get_activity_completions(membership_type, membership_id)
+        raid_clears = sum(completions.get(name, 0) for name in RAIDS if name != RANDOM_RAID)
 
     stats = {
         "raids": raid_clears,
