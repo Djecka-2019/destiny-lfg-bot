@@ -341,6 +341,21 @@ def setup_commands(bot) -> None:
         await periodic_role_sync()
         await interaction.followup.send("✅ Глобальну синхронізацію завершено.", ephemeral=True)
 
+    @bot.tree.command(name="sync-registered-role", description="Sync registered role based on linked account clan membership")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def sync_registered_role_command(interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        from registration_sync import sync_registered_roles_for_all
+
+        summary = await sync_registered_roles_for_all(bot)
+        await interaction.followup.send(
+            "✅ Registered role sync complete.\n"
+            f"Checked: **{summary['checked']}**\n"
+            f"Added: **{summary['added']}** | Removed: **{summary['removed']}** | Kept: **{summary['kept']}**\n"
+            f"Skipped: **{summary['skipped']}** | Not in guild: **{summary['not_in_guild']}** | Errors: **{summary['errors']}**",
+            ephemeral=True,
+        )
+
     @bot.tree.command(name="profile", description="Переглянути статистику Destiny 2")
     @app_commands.describe(
         member="Discord користувач (необов'язково)",

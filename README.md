@@ -10,6 +10,7 @@ A Discord bot for organizing Destiny 2 raid, dungeon, and PvP groups (LFG — Lo
 - 15-minute DM reminder before activity starts
 - Team stats: completion counts and Sherpa/newbie tags for each member
 - Player profiles linked to Bungie accounts via OAuth — full raid/dungeon history
+- Registered role assignment gated by configured Bungie clan membership
 - Commendation system: give and track post-activity praise
 - Automatic Discord role assignment based on Bungie stats (raids, GMs, Trials, PvP rank, Gambit resets)
 - Persistent template buttons for channels (admins post once, players click anytime)
@@ -42,6 +43,7 @@ A Discord bot for organizing Destiny 2 raid, dungeon, and PvP groups (LFG — Lo
 |---|---|
 | `/template <type> [channel] [title] [description]` | Post a persistent LFG button in a channel |
 | `/register-template [channel] [title] [description]` | Post a persistent account-registration button |
+| `/sync-registered-role` | Sync the registered role for linked users based on configured clan membership |
 | `/ping-roles add <role>` | Allow a role to be pinged in LFG posts |
 | `/ping-roles remove <role>` | Remove a role from the ping list |
 | `/ping-roles everyone <true\|false>` | Enable or disable @everyone pings |
@@ -107,12 +109,16 @@ python src/bot.py
 | `BUNGIE_CLIENT_SECRET` | OAuth client secret from the Bungie application page |
 | `OAUTH_PORT` | Port for the OAuth callback HTTP server (default: `8080`) |
 | `GUILD_ID` | Discord server ID for instant command sync and role assignment |
-| `REGISTERED_ROLE_ID` | Role ID to assign automatically after a user links their Bungie account |
+| `REGISTERED_ROLE_ID` | Role ID to assign to linked users only when they are in an allowed Bungie clan |
+| `REGISTRATION_LOG_CHANNEL_ID` | Channel ID where new registration embeds are posted |
+| `ALLOWED_CLAN_IDS` | Comma-separated Bungie clan IDs allowed to receive `REGISTERED_ROLE_ID` (default: `5150843,4867387`) |
 | `ROLE_SYNC_CONFIG` | Path to the role sync JSON config file (default: `role_sync.json`) |
 
 ## Role Sync
 
-Roles are assigned automatically when a user links their account and on demand via `/sync-roles`. Configure thresholds in `role_sync.json`:
+The registered role is assigned only to linked users who are currently in one of the configured Bungie clans, and is periodically rechecked for linked users only. Admins can run `/sync-registered-role` to force that check.
+
+Stat roles are assigned automatically when a user links their account and on demand via `/sync-roles`. Configure thresholds in `role_sync.json`:
 
 ```json
 {

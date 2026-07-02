@@ -5,6 +5,7 @@ import discord
 from aiohttp import web
 from bungie import exchange_code, get_bungie_memberships, get_sync_stats
 from database import get_and_delete_oauth_state, save_oauth_state, save_profile
+from registration_sync import sync_registered_role
 from role_sync import sync_member_roles
 
 logger = logging.getLogger("destiny_bot")
@@ -67,9 +68,9 @@ async def _callback(request: web.Request) -> web.Response:
 
     if _bot:
         guild_id = os.getenv("GUILD_ID")
-        role_id = os.getenv("REGISTERED_ROLE_ID")
-        role_assigned = False
+        registered_role_result = None
         synced_role_names = []
+        member = None
 
         if guild_id:
             try:
@@ -83,25 +84,12 @@ async def _callback(request: web.Request) -> web.Response:
                     if not member:
                         logger.error(f"OAuth: Member {discord_id} not found in guild {guild_id}")
                     
-                    # Надаємо основну роль реєстрації
-                    if role_id:
-                        role = guild.get_role(int(role_id))
-                        if not role:
-                            logger.warning(f"OAuth: Role {role_id} not found in cache, fetching all roles...")
-                            roles = await guild.fetch_roles()
-                            role = discord.utils.get(roles, id=int(role_id))
-
-                        if member and role:
-                            await member.add_roles(role)
-                            role_assigned = True
-                            logger.info(f"OAuth: надано основну роль {role.name} користувачу {discord_id}")
-                        else:
-                            if not role:
-                                logger.error(f"OAuth: Role {role_id} not found even after fetch")
-                            if not member:
-                                logger.error(f"OAuth: Member {discord_id} is None during role assignment")
-                    else:
-                        logger.warning("OAuth: REGISTERED_ROLE_ID is not set in .env")
+                    if member:
+                        registered_role_result = await sync_registered_role(
+                            member,
+                            player["membership_type"],
+                            player["membership_id"],
+                        )
                     
                     # Синхронізуємо ролі за статистикою
                     stats = await get_sync_stats(player["membership_type"], player["membership_id"])
@@ -109,6 +97,14 @@ async def _callback(request: web.Request) -> web.Response:
                         synced_role_names = await sync_member_roles(member, stats)
                         if synced_role_names:
                             logger.info(f"OAuth: синхронізовано додаткові ролі для {discord_id}: {synced_role_names}")
+                    await _send_registration_log(
+                        guild,
+                        member,
+                        discord_id,
+                        player,
+                        registered_role_result,
+                        synced_role_names,
+                    )
                 else:
                     logger.error(f"OAuth: Could not find guild {guild_id}")
 
@@ -118,8 +114,14 @@ async def _callback(request: web.Request) -> web.Response:
         try:
             user = await _bot.fetch_user(int(discord_id))
             msgs = []
-            if role_assigned:
-                msgs.append("Тобі надано роль зареєстрованого користувача.")
+            if registered_role_result:
+                action = registered_role_result.get("action")
+                role_name = registered_role_result.get("role_name")
+                in_allowed_clan = registered_role_result.get("in_allowed_clan")
+                if action == "added" and role_name:
+                    msgs.append(f"Тобі надано роль **{role_name}**, бо ти є в дозволеному клані.")
+                elif in_allowed_clan is False:
+                    msgs.append("Роль зареєстрованого користувача видається тільки учасникам дозволених кланів.")
             if synced_role_names:
                 role_list = ", ".join(synced_role_names)
                 msgs.append(f"Також на основі твоєї статистики Bungie тобі надано ролі: **{role_list}**.")
@@ -136,6 +138,86 @@ async def _callback(request: web.Request) -> web.Response:
         ),
         content_type="text/html",
     )
+
+
+async def _send_registration_log(
+    guild: discord.Guild,
+    member: discord.Member | None,
+    discord_id: str,
+    player: dict,
+    registered_role_result: dict | None,
+    synced_role_names: list[str],
+) -> None:
+    channel_id = os.getenv("REGISTRATION_LOG_CHANNEL_ID")
+    if not channel_id:
+        return
+
+    try:
+        channel = guild.get_channel(int(channel_id))
+        if not channel and _bot:
+            channel = await _bot.fetch_channel(int(channel_id))
+    except Exception as e:
+        logger.warning(f"Registration log: failed to resolve channel {channel_id}: {e}")
+        return
+
+    if not channel:
+        logger.warning(f"Registration log: channel {channel_id} not found")
+        return
+
+    roles_given: list[str] = []
+    roles_removed: list[str] = []
+    clan_status = "Not checked"
+    registered_role_status = "Not checked"
+
+    if registered_role_result:
+        action = registered_role_result.get("action")
+        role_name = registered_role_result.get("role_name")
+        in_allowed_clan = registered_role_result.get("in_allowed_clan")
+        reason = registered_role_result.get("reason")
+        clan_ids = registered_role_result.get("clan_ids", [])
+
+        if in_allowed_clan is True:
+            clan_status = "In an allowed clan"
+        elif in_allowed_clan is False:
+            clan_status = "Not in an allowed clan"
+        elif reason:
+            clan_status = f"Skipped: {reason}"
+
+        if clan_ids:
+            clan_status = f"{clan_status} ({', '.join(clan_ids)})"
+
+        if action == "added" and role_name:
+            roles_given.append(role_name)
+            registered_role_status = f"Added {role_name}"
+        elif action == "removed" and role_name:
+            roles_removed.append(role_name)
+            registered_role_status = f"Removed {role_name}"
+        elif action == "kept" and role_name:
+            registered_role_status = f"Kept {role_name}"
+        elif reason:
+            registered_role_status = f"Skipped: {reason}"
+
+    roles_given.extend(synced_role_names)
+
+    embed = discord.Embed(
+        title="New Bungie Registration",
+        color=discord.Color.green(),
+    )
+    discord_value = f"<@{discord_id}> (`{discord_id}`)"
+    if member:
+        discord_value = f"{member.mention} (`{member.id}`)"
+    embed.add_field(name="Discord", value=discord_value, inline=False)
+    embed.add_field(name="Bungie", value=player["bungie_name"], inline=False)
+    embed.add_field(name="Clan Status", value=clan_status, inline=False)
+    embed.add_field(name="Registered Role", value=registered_role_status, inline=False)
+    embed.add_field(name="Roles Given", value=", ".join(roles_given) if roles_given else "None", inline=False)
+    if roles_removed:
+        embed.add_field(name="Roles Removed", value=", ".join(roles_removed), inline=False)
+
+    try:
+        await channel.send(embed=embed)
+    except Exception as e:
+        logger.warning(f"Registration log: failed to send embed: {e}")
 
 
 def _html(title: str, body: str) -> str:

@@ -345,6 +345,41 @@ async def get_bungie_memberships(access_token: str) -> dict | None:
     }
 
 
+async def get_member_clan_ids(membership_type: int, membership_id: str) -> set[str] | None:
+    """Return clan group IDs for a Destiny membership, or None if Bungie lookup fails."""
+    api_key = os.getenv("BUNGIE_API_KEY")
+    if not api_key:
+        return None
+
+    # filter=0 means all joined groups, groupType=1 means clans.
+    url = f"{BUNGIE_BASE}/Platform/GroupV2/User/{membership_type}/{membership_id}/0/1/"
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as http:
+        try:
+            async with http.get(url, headers={"X-API-Key": api_key}) as resp:
+                if resp.status != 200:
+                    logger.warning(f"GetGroupsForMember HTTP {resp.status} for {membership_id}")
+                    return None
+                data = await resp.json()
+                if data.get("ErrorCode") not in (None, 1):
+                    logger.warning(
+                        f"GetGroupsForMember Bungie error for {membership_id}: "
+                        f"{data.get('ErrorStatus')} {data.get('Message')}"
+                    )
+                    return None
+        except Exception as e:
+            logger.error(f"Error fetching Bungie clans for {membership_id}: {e}")
+            return None
+
+    results = data.get("Response", {}).get("results", [])
+    clan_ids: set[str] = set()
+    for entry in results:
+        group = entry.get("group", entry)
+        group_id = group.get("groupId")
+        if group_id:
+            clan_ids.add(str(group_id))
+    return clan_ids
+
+
 async def get_activity_completions(membership_type: int, membership_id: str) -> dict[str, int]:
     api_key = os.getenv("BUNGIE_API_KEY")
     if not api_key or not activity_hashes:

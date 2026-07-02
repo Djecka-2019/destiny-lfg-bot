@@ -8,6 +8,7 @@ from constants import TZ_KYIV, RAIDS, DUNGEONS, RANDOM_RAID, RANDOM_DUNGEON
 from database import lfg_sessions, upsert_session, delete_session, get_all_profiles
 from embeds import build_lfg_embed
 from bungie import get_sync_stats
+from registration_sync import sync_registered_role
 from role_sync import sync_member_roles
 
 logger = logging.getLogger("destiny_bot")
@@ -50,6 +51,11 @@ async def periodic_role_sync() -> None:
                 member = await guild.fetch_member(int(discord_id))
             
             if member:
+                await sync_registered_role(
+                    member,
+                    profile["membership_type"],
+                    profile["membership_id"],
+                )
                 stats = await get_sync_stats(profile["membership_type"], profile["membership_id"])
                 if stats:
                     await sync_member_roles(member, stats)
